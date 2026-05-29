@@ -1,533 +1,519 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { useScrollScene } from '../hooks/useScrollScene';
+import * as THREE from 'three';
 import DocsNav from '../components/DocsNav';
-import GlobeCanvas from '../components/GlobeCanvas';
-import PixelDivider from '../components/PixelDivider';
-import PixelShield from '../components/PixelShield';
-import PixelKeyTheft from '../components/docs/PixelKeyTheft';
-import PixelLayerStack from '../components/docs/PixelLayerStack';
-import PixelSignatureViz from '../components/docs/PixelSignatureViz';
-import PixelDataFlow from '../components/docs/PixelDataFlow';
-import PixelCompetitorGrid from '../components/docs/PixelCompetitorGrid';
-import PixelTimeline from '../components/docs/PixelTimeline';
 
-function Fade({ progress, delay = 0, children }: { progress: number; delay?: number; children: React.ReactNode }) {
-  const p = Math.max(0, Math.min(1, (progress - delay) * 3));
-  return (
-    <div style={{ opacity: p, transform: `translateY(${(1 - p) * 15}px)`, transition: 'opacity 0.1s, transform 0.1s' }}>
-      {children}
-    </div>
-  );
+const SECTIONS = [
+  { label: 'TITLE', angle: 0, height: 0.5, radius: 0 },
+  { label: 'PROBLEM', angle: 0, height: 0, radius: 8 },
+  { label: 'INSIGHT', angle: Math.PI * 0.4, height: -0.3, radius: 8 },
+  { label: 'SIGNATURES', angle: Math.PI * 0.8, height: -0.8, radius: 9 },
+  { label: 'ARCHITECTURE', angle: Math.PI * 1.2, height: -0.2, radius: 8 },
+  { label: 'SECURITY', angle: Math.PI * 1.55, height: 0.3, radius: 8 },
+  { label: 'LANDSCAPE', angle: Math.PI * 1.85, height: 0.7, radius: 9 },
+  { label: 'ROADMAP', angle: Math.PI * 2.2, height: 1.0, radius: 8 },
+];
+
+function getCameraPos(index: number, t: number = 0) {
+  const s = SECTIONS[index];
+  if (index === 0) {
+    return { x: 0, y: 2 + Math.sin(t * 0.3) * 0.1, z: 12, lx: 0, ly: 0, lz: 0 };
+  }
+  const a = s.angle;
+  const r = s.radius;
+  const x = Math.sin(a) * r;
+  const z = Math.cos(a) * r;
+  const y = s.height * 3;
+  return { x, y, z, lx: 0, ly: 0, lz: 0 };
 }
 
+function lerp(a: number, b: number, t: number) { return a + (b - a) * t; }
+
+function easeInOut(t: number) { return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2; }
+
 export default function DocsPage() {
-  const { activeSection, sectionProgress, scrollToSection, containerRef, setSectionRef } = useScrollScene();
+  const mountRef = useRef<HTMLDivElement>(null);
+  const [activeSection, setActiveSection] = useState(0);
+  const [transitioning, setTransitioning] = useState(false);
+  const sceneRef = useRef<{
+    camera: THREE.PerspectiveCamera;
+    targetIndex: number;
+    currentPos: { x: number; y: number; z: number };
+    progress: number;
+  } | null>(null);
+
+  const navigateTo = (index: number) => {
+    if (transitioning || !sceneRef.current) return;
+    setTransitioning(true);
+    sceneRef.current.targetIndex = index;
+    sceneRef.current.progress = 0;
+  };
+
+  useEffect(() => {
+    const mount = mountRef.current!;
+    const w = window.innerWidth;
+    const h = window.innerHeight;
+
+    const scene = new THREE.Scene();
+    scene.fog = new THREE.FogExp2(0x141210, 0.03);
+
+    const camera = new THREE.PerspectiveCamera(50, w / h, 0.1, 200);
+    const initPos = getCameraPos(0, 0);
+    camera.position.set(initPos.x, initPos.y, initPos.z);
+    camera.lookAt(0, 0, 0);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: false, alpha: false });
+    renderer.setSize(w, h);
+    renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+    renderer.setClearColor(0x141210);
+    mount.appendChild(renderer.domElement);
+    renderer.domElement.style.imageRendering = 'auto';
+
+    const coral = 0xd97757;
+    const peach = 0xe89b7d;
+    const dim = 0x5e524a;
+    const paper3 = 0x312d29;
+
+    // --- central globe (same as GlobeCanvas but in the scene) ---
+    const icoGeo = new THREE.IcosahedronGeometry(1.8, 3);
+    const icoMat = new THREE.MeshBasicMaterial({ color: coral, wireframe: true, transparent: true, opacity: 0.15 });
+    const ico = new THREE.Mesh(icoGeo, icoMat);
+    scene.add(ico);
+
+    const innerGeo = new THREE.IcosahedronGeometry(1.5, 2);
+    const innerMat = new THREE.PointsMaterial({ color: peach, size: 0.05, transparent: true, opacity: 0.5 });
+    scene.add(new THREE.Points(innerGeo, innerMat));
+
+    // orbit rings
+    for (let i = 0; i < 5; i++) {
+      const r = 2.2 + i * 0.4;
+      const ringGeo = new THREE.RingGeometry(r, r + 0.01, 96);
+      const ringMat = new THREE.MeshBasicMaterial({ color: dim, transparent: true, opacity: 0.08 - i * 0.012, side: THREE.DoubleSide });
+      const ring = new THREE.Mesh(ringGeo, ringMat);
+      ring.rotation.x = Math.PI / 2 + (i - 2) * 0.2;
+      ring.rotation.z = i * 0.15;
+      scene.add(ring);
+    }
+
+    // --- floating particles throughout the space ---
+    const pCount = 300;
+    const pGeo = new THREE.BufferGeometry();
+    const pPos = new Float32Array(pCount * 3);
+    for (let i = 0; i < pCount; i++) {
+      pPos[i * 3] = (Math.random() - 0.5) * 40;
+      pPos[i * 3 + 1] = (Math.random() - 0.5) * 20;
+      pPos[i * 3 + 2] = (Math.random() - 0.5) * 40;
+    }
+    pGeo.setAttribute('position', new THREE.BufferAttribute(pPos, 3));
+    const pMat = new THREE.PointsMaterial({ color: coral, size: 0.03, transparent: true, opacity: 0.3 });
+    scene.add(new THREE.Points(pGeo, pMat));
+
+    // --- section markers (glowing cubes at each stop) ---
+    const markers: THREE.Mesh[] = [];
+    for (let i = 1; i < SECTIONS.length; i++) {
+      const s = SECTIONS[i];
+      const a = s.angle;
+      const markerR = s.radius * 0.6;
+      const mx = Math.sin(a) * markerR;
+      const mz = Math.cos(a) * markerR;
+      const my = s.height * 3;
+
+      const mGeo = new THREE.BoxGeometry(0.15, 0.15, 0.15);
+      const mMat = new THREE.MeshBasicMaterial({ color: coral, transparent: true, opacity: 0.4 });
+      const marker = new THREE.Mesh(mGeo, mMat);
+      marker.position.set(mx, my, mz);
+      scene.add(marker);
+      markers.push(marker);
+
+      // connection line from marker to center
+      const lineGeo = new THREE.BufferGeometry().setFromPoints([
+        new THREE.Vector3(mx, my, mz),
+        new THREE.Vector3(0, 0, 0),
+      ]);
+      const lineMat = new THREE.LineBasicMaterial({ color: paper3, transparent: true, opacity: 0.1 });
+      scene.add(new THREE.Line(lineGeo, lineMat));
+    }
+
+    // --- data connector rings between sections ---
+    for (let i = 1; i < SECTIONS.length - 1; i++) {
+      const s1 = SECTIONS[i];
+      const s2 = SECTIONS[i + 1];
+      const points: THREE.Vector3[] = [];
+      const steps = 20;
+      for (let j = 0; j <= steps; j++) {
+        const t = j / steps;
+        const a = lerp(s1.angle, s2.angle, t);
+        const r = lerp(s1.radius, s2.radius, t) * 0.6;
+        const y = lerp(s1.height, s2.height, t) * 3;
+        points.push(new THREE.Vector3(Math.sin(a) * r, y, Math.cos(a) * r));
+      }
+      const pathGeo = new THREE.BufferGeometry().setFromPoints(points);
+      const pathMat = new THREE.LineBasicMaterial({ color: dim, transparent: true, opacity: 0.06 });
+      scene.add(new THREE.Line(pathGeo, pathMat));
+    }
+
+    const state = {
+      camera,
+      targetIndex: 0,
+      currentPos: { x: initPos.x, y: initPos.y, z: initPos.z },
+      progress: 1,
+    };
+    sceneRef.current = state;
+
+    let raf: number;
+    const animate = () => {
+      const t = performance.now() * 0.001;
+
+      ico.rotation.y = t * 0.08;
+      ico.rotation.x = Math.sin(t * 0.05) * 0.1;
+
+      // marker pulse
+      markers.forEach((m, i) => {
+        const scale = 1 + Math.sin(t * 2 + i) * 0.3;
+        m.scale.setScalar(scale);
+        (m.material as THREE.MeshBasicMaterial).opacity = 0.3 + Math.sin(t * 2 + i) * 0.15;
+      });
+
+      // camera transition
+      if (state.progress < 1) {
+        state.progress = Math.min(1, state.progress + 0.012);
+        const ease = easeInOut(state.progress);
+        const target = getCameraPos(state.targetIndex, t);
+        state.currentPos.x = lerp(camera.position.x, target.x, ease);
+        state.currentPos.y = lerp(camera.position.y, target.y, ease);
+        state.currentPos.z = lerp(camera.position.z, target.z, ease);
+        camera.position.set(state.currentPos.x, state.currentPos.y, state.currentPos.z);
+        camera.lookAt(0, 0, 0);
+
+        if (state.progress >= 1) {
+          setActiveSection(state.targetIndex);
+          setTransitioning(false);
+        }
+      } else {
+        // gentle hover at current position
+        const pos = getCameraPos(state.targetIndex, t);
+        camera.position.x = pos.x + Math.sin(t * 0.5) * 0.05;
+        camera.position.y = pos.y + Math.cos(t * 0.4) * 0.05;
+        camera.position.z = pos.z + Math.sin(t * 0.3) * 0.03;
+        camera.lookAt(0, 0, 0);
+      }
+
+      renderer.render(scene, camera);
+      raf = requestAnimationFrame(animate);
+    };
+    animate();
+
+    const handleResize = () => {
+      const w = window.innerWidth;
+      const h = window.innerHeight;
+      camera.aspect = w / h;
+      camera.updateProjectionMatrix();
+      renderer.setSize(w, h);
+    };
+    window.addEventListener('resize', handleResize);
+
+    const handleWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      if (transitioning) return;
+      const dir = e.deltaY > 0 ? 1 : -1;
+      const next = Math.max(0, Math.min(SECTIONS.length - 1, state.targetIndex + dir));
+      if (next !== state.targetIndex) {
+        state.targetIndex = next;
+        state.progress = 0;
+        setTransitioning(true);
+      }
+    };
+    mount.addEventListener('wheel', handleWheel, { passive: false });
+
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === 'ArrowDown' || e.key === 'ArrowRight') {
+        e.preventDefault();
+        const next = Math.min(SECTIONS.length - 1, state.targetIndex + 1);
+        if (next !== state.targetIndex) {
+          state.targetIndex = next;
+          state.progress = 0;
+          setTransitioning(true);
+        }
+      } else if (e.key === 'ArrowUp' || e.key === 'ArrowLeft') {
+        e.preventDefault();
+        const prev = Math.max(0, state.targetIndex - 1);
+        if (prev !== state.targetIndex) {
+          state.targetIndex = prev;
+          state.progress = 0;
+          setTransitioning(true);
+        }
+      }
+    };
+    window.addEventListener('keydown', handleKey);
+
+    return () => {
+      cancelAnimationFrame(raf);
+      window.removeEventListener('resize', handleResize);
+      window.removeEventListener('keydown', handleKey);
+      mount.removeEventListener('wheel', handleWheel);
+      if (mount.contains(renderer.domElement)) mount.removeChild(renderer.domElement);
+      renderer.dispose();
+    };
+  }, []);
 
   return (
-    <div ref={containerRef} className="h-screen overflow-y-auto overflow-x-hidden" style={{ scrollSnapType: 'y proximity' }}>
+    <div className="h-screen overflow-hidden relative">
       {/* scanlines */}
       <div className="fixed inset-0 pointer-events-none z-50"
         style={{ background: 'repeating-linear-gradient(0deg, rgba(0,0,0,0.06) 0 1px, transparent 1px 3px)', mixBlendMode: 'multiply' }} />
 
-      <DocsNav activeSection={activeSection} onNavigate={scrollToSection} />
+      {/* Three.js canvas */}
+      <div ref={mountRef} className="absolute inset-0" />
 
-      {/* ========== SCENE 0: TITLE ========== */}
-      <section ref={setSectionRef(0)} className="h-screen flex items-center justify-center snap-start relative">
-        <div className="flex flex-col items-center text-center">
-          <div className="mb-8" style={{ filter: 'drop-shadow(0 0 40px rgba(217,119,87,0.15))' }}>
-            <GlobeCanvas size={360} />
-          </div>
-          <p className="font-[Silkscreen] text-[10px] text-coral tracking-[0.2em] mb-3">// RESEARCH THESIS</p>
-          <h1 className="font-[Silkscreen] text-coral text-4xl leading-tight mb-4" style={{ textShadow: '0 0 30px rgba(217,119,87,0.3)' }}>
-            WORLD OF AGENTS
-          </h1>
-          <p className="font-[Silkscreen] text-dim text-[12px] tracking-[0.14em] mb-12">THE MISSING IDENTITY LAYER FOR AI AGENTS</p>
-          <div className="animate-bounce text-dim text-[10px] tracking-[0.2em] font-[Silkscreen]">
-            SCROLL TO BEGIN<br />
-            <span className="text-coral">▼</span>
-          </div>
+      {/* nav */}
+      <DocsNav activeSection={activeSection} onNavigate={navigateTo} />
+
+      {/* HTML content overlay */}
+      <div className="absolute inset-0 pointer-events-none z-10 flex items-center justify-center">
+        <div className="pointer-events-auto max-w-[700px] max-h-[80vh] overflow-y-auto px-6" style={{ scrollbarWidth: 'thin' }}>
+          <ContentPanel section={activeSection} />
         </div>
-      </section>
+      </div>
 
-      <PixelDivider direction="right" />
-
-      {/* ========== SCENE 1: THE PROBLEM ========== */}
-      <section ref={setSectionRef(1)} className="min-h-screen snap-start py-20">
-        <div className="max-w-[1100px] mx-auto px-8">
-          <Fade progress={sectionProgress.get(1) ?? 0}>
-            <p className="font-[Silkscreen] text-[10px] text-coral tracking-[0.2em] mb-3">// 01 — THE PROBLEM</p>
-            <h2 className="font-[Silkscreen] text-ink text-2xl mb-10">AGENTS HAVE NO IDENTITY</h2>
-          </Fade>
-
-          <div className="grid grid-cols-2 gap-16 items-start">
-            <div className="space-y-6">
-              <Fade progress={sectionProgress.get(1) ?? 0} delay={0.1}>
-                <p className="text-[13px] text-muted leading-relaxed">
-                  AI agents are autonomous software programs that act on behalf of humans — they write code, deploy infrastructure,
-                  send emails, query databases, and interact with APIs. Every single one has an identity problem.
-                </p>
-              </Fade>
-
-              <Fade progress={sectionProgress.get(1) ?? 0} delay={0.15}>
-                <div className="border-l-2 border-coral pl-4 py-2">
-                  <p className="text-[11px] text-coral tracking-[0.1em] mb-1">OPTION A: NO IDENTITY</p>
-                  <p className="text-[12px] text-muted leading-relaxed">
-                    The agent operates with no authentication, relying on the assumption that it's running in a trusted environment.
-                  </p>
-                </div>
-              </Fade>
-
-              <Fade progress={sectionProgress.get(1) ?? 0} delay={0.2}>
-                <div className="border-l-2 border-red pl-4 py-2">
-                  <p className="text-[11px] text-red tracking-[0.1em] mb-1">OPTION B: STOLEN IDENTITY</p>
-                  <p className="text-[12px] text-muted leading-relaxed">
-                    A developer copies their personal OAuth token into the agent's environment variables. The agent now has full,
-                    indistinguishable access to everything the human can do.
-                  </p>
-                </div>
-              </Fade>
-
-              <Fade progress={sectionProgress.get(1) ?? 0} delay={0.25}>
-                <p className="font-[Silkscreen] text-[10px] text-peach tracking-[0.14em] mt-6 mb-3">THREE UNANSWERABLE QUESTIONS</p>
-                <div className="space-y-2">
-                  {[
-                    '"Which human is responsible for this action?"',
-                    '"Is this the same agent that was authorized?"',
-                    '"Is this agent behaving normally?"',
-                  ].map((q, i) => (
-                    <div key={i} className="flex items-start gap-3">
-                      <span className="text-coral font-[Silkscreen] text-[10px] mt-0.5">{String(i + 1).padStart(2, '0')}</span>
-                      <p className="text-[12px] text-peach leading-relaxed">{q}</p>
-                    </div>
-                  ))}
-                </div>
-              </Fade>
-
-              <Fade progress={sectionProgress.get(1) ?? 0} delay={0.3}>
-                <p className="font-[Silkscreen] text-[10px] text-peach tracking-[0.14em] mt-6 mb-3">WHY NOW</p>
-                <div className="space-y-2">
-                  {[
-                    { dot: 'bg-coral', text: 'MCP and agent-to-agent protocols are exploding with no agreed identity story.' },
-                    { dot: 'bg-amber', text: 'Enterprise adoption is accelerating — each agent credential is a liability.' },
-                    { dot: 'bg-green', text: 'NIST, IETF, and CSA are building standards. The window to influence them is now.' },
-                  ].map((item, i) => (
-                    <div key={i} className="flex items-start gap-3">
-                      <div className={`w-1.5 h-1.5 ${item.dot} mt-1.5 shrink-0`} />
-                      <p className="text-[12px] text-muted leading-relaxed">{item.text}</p>
-                    </div>
-                  ))}
-                </div>
-              </Fade>
-            </div>
-
-            <Fade progress={sectionProgress.get(1) ?? 0} delay={0.1}>
-              <div className="flex justify-center sticky top-[25vh]">
-                <PixelKeyTheft active={Math.abs(activeSection - 1) <= 1} />
-              </div>
-            </Fade>
-          </div>
+      {/* bottom hint */}
+      {activeSection === 0 && !transitioning && (
+        <div className="absolute bottom-8 left-1/2 -translate-x-1/2 z-20 text-center animate-pulse">
+          <p className="text-[10px] text-dim tracking-[0.2em] font-[Silkscreen]">SCROLL OR PRESS ▼ TO EXPLORE</p>
         </div>
-      </section>
-
-      <PixelDivider direction="left" />
-
-      {/* ========== SCENE 2: THE INSIGHT ========== */}
-      <section ref={setSectionRef(2)} className="min-h-screen snap-start py-20">
-        <div className="max-w-[1100px] mx-auto px-8">
-          <Fade progress={sectionProgress.get(2) ?? 0}>
-            <p className="font-[Silkscreen] text-[10px] text-coral tracking-[0.2em] mb-3">// 02 — THE INSIGHT</p>
-            <h2 className="font-[Silkscreen] text-ink text-2xl mb-10">FOUR LAYERS, TWO ARE MISSING</h2>
-          </Fade>
-
-          <div className="grid grid-cols-2 gap-16 items-start">
-            <Fade progress={sectionProgress.get(2) ?? 0} delay={0.1}>
-              <div className="flex justify-center">
-                <PixelLayerStack active={Math.abs(activeSection - 2) <= 1} progress={sectionProgress.get(2) ?? 0} />
-              </div>
-            </Fade>
-
-            <div className="space-y-6">
-              <Fade progress={sectionProgress.get(2) ?? 0} delay={0.15}>
-                <div className="grid grid-cols-1 gap-px bg-paper3 border border-paper3">
-                  {[
-                    { label: 'HUMAN IDENTITY', desc: 'Okta, Google, Azure AD', status: 'EXISTS', color: 'text-green' },
-                    { label: 'BINDING', desc: 'Provable link: human ↔ agent', status: 'NEW', color: 'text-coral' },
-                    { label: 'AGENT RUNTIME', desc: 'Crypto key + behavioral signature', status: 'NEW', color: 'text-coral' },
-                    { label: 'AUTHORIZATION', desc: 'OAuth 2.0 / OIDC / RFC 8693', status: 'EXISTS', color: 'text-green' },
-                  ].map((l, i) => (
-                    <div key={i} className="bg-paper px-4 py-3 flex justify-between items-center">
-                      <div>
-                        <p className="text-[11px] text-ink font-bold">{l.label}</p>
-                        <p className="text-[10px] text-dim mt-0.5">{l.desc}</p>
-                      </div>
-                      <span className={`text-[9px] tracking-[0.14em] font-bold ${l.color}`}>{l.status}</span>
-                    </div>
-                  ))}
-                </div>
-              </Fade>
-
-              <Fade progress={sectionProgress.get(2) ?? 0} delay={0.25}>
-                <p className="font-[Silkscreen] text-[10px] text-peach tracking-[0.14em] mb-2">DELEGATION, NOT IMPERSONATION</p>
-                <p className="text-[12px] text-muted leading-relaxed mb-4">
-                  The agent does not get its own credentials. It gets the <span className="text-peach">human's credentials, with attribution.</span> The
-                  resulting JWT carries an <code className="text-coral bg-paper3 px-1 text-[10px]">act.sub</code> claim — the downstream system
-                  sees Alice as the principal, with the agent as the declared actor.
-                </p>
-                <div className="border border-paper3 bg-paper2 p-4">
-                  <p className="text-[9px] text-dim tracking-[0.14em] mb-2">JWT PAYLOAD</p>
-                  <pre className="text-[11px] text-ink font-mono leading-relaxed">{`{
-  "iss": "worldofagents",
-  "sub": "alice@company.com",
-  "act": { "sub": "agt_xyz" },
-  "similarity_score": 0.94
-}`}</pre>
-                </div>
-              </Fade>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <PixelDivider direction="right" />
-
-      {/* ========== SCENE 3: BEHAVIORAL SIGNATURES ========== */}
-      <section ref={setSectionRef(3)} className="min-h-screen snap-start py-20">
-        <div className="max-w-[1100px] mx-auto px-8">
-          <Fade progress={sectionProgress.get(3) ?? 0}>
-            <p className="font-[Silkscreen] text-[10px] text-coral tracking-[0.2em] mb-3">// 03 — CORE IP</p>
-            <h2 className="font-[Silkscreen] text-ink text-2xl mb-4">BEHAVIORAL SIGNATURES</h2>
-            <p className="text-[13px] text-muted leading-relaxed max-w-2xl mb-10">
-              Every AI agent has a behavioral fingerprint. A coding agent calls search, read_file, edit_file in predictable patterns.
-              These patterns are as distinctive as a human's keystroke dynamics.
-            </p>
-          </Fade>
-
-          <div className="grid grid-cols-5 gap-8 items-start">
-            <div className="col-span-3 space-y-4">
-              <Fade progress={sectionProgress.get(3) ?? 0} delay={0.1}>
-                <FeatureCards />
-              </Fade>
-
-              <Fade progress={sectionProgress.get(3) ?? 0} delay={0.3}>
-                <p className="font-[Silkscreen] text-[10px] text-peach tracking-[0.14em] mt-8 mb-3">COMPARISON ENSEMBLE</p>
-                <div className="border border-paper3 bg-paper/60 overflow-hidden">
-                  <table className="w-full text-[11px]">
-                    <thead><tr className="border-b border-paper3 bg-paper2/50">
-                      <th className="px-3 py-2 text-left text-[9px] text-dim tracking-[0.14em]">METRIC</th>
-                      <th className="px-3 py-2 text-left text-[9px] text-dim tracking-[0.14em]">WEIGHT</th>
-                      <th className="px-3 py-2 text-left text-[9px] text-dim tracking-[0.14em]">METHOD</th>
-                    </tr></thead>
-                    <tbody className="divide-y divide-paper3/50">
-                      {[
-                        ['Tool Distribution', '25%', 'Jensen-Shannon divergence'],
-                        ['Feature Vector', '30%', 'Cosine similarity (256-dim)'],
-                        ['Sequence Pattern', '25%', 'Per-state JSD on transitions'],
-                        ['Statistical Profile', '20%', 'Response length + vocabulary'],
-                      ].map(([m, w, method], i) => (
-                        <tr key={i}><td className="px-3 py-2 text-ink">{m}</td><td className="px-3 py-2 text-coral font-mono">{w}</td><td className="px-3 py-2 text-dim">{method}</td></tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </Fade>
-
-              <Fade progress={sectionProgress.get(3) ?? 0} delay={0.35}>
-                <p className="font-[Silkscreen] text-[10px] text-peach tracking-[0.14em] mt-8 mb-3">ACADEMIC BACKING</p>
-                <div className="grid grid-cols-3 gap-3">
-                  {[
-                    { title: 'LLMmap', venue: 'USENIX Security 2025', stat: '>95% accuracy across 42 LLM versions' },
-                    { title: 'GitHub Fingerprinting', venue: 'arXiv Jan 2026', stat: '97.2% F1 identifying 5 coding agents' },
-                    { title: 'Stylometric Ensemble', venue: '2025', stat: '0.9988 precision, 0.0004 FPR' },
-                  ].map((r, i) => (
-                    <div key={i} className="border border-paper3 bg-paper/60 p-3">
-                      <p className="text-[11px] text-coral font-bold">{r.title}</p>
-                      <p className="text-[9px] text-dim mt-0.5">{r.venue}</p>
-                      <p className="text-[10px] text-muted mt-1">{r.stat}</p>
-                    </div>
-                  ))}
-                </div>
-              </Fade>
-
-              <Fade progress={sectionProgress.get(3) ?? 0} delay={0.4}>
-                <div className="border-l-2 border-amber pl-4 py-2 mt-6">
-                  <p className="text-[11px] text-amber tracking-[0.1em] mb-1">HONEST ASSESSMENT</p>
-                  <p className="text-[12px] text-muted leading-relaxed">
-                    Behavioral signatures are <span className="text-peach">anomaly detection, not authentication.</span> The cryptographic
-                    hardness is in the agent key and the IdP-issued token. We will never claim otherwise.
-                  </p>
-                </div>
-              </Fade>
-            </div>
-
-            <div className="col-span-2 sticky top-[15vh]">
-              <Fade progress={sectionProgress.get(3) ?? 0} delay={0.1}>
-                <PixelSignatureViz active={Math.abs(activeSection - 3) <= 1} />
-              </Fade>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <PixelDivider direction="left" />
-
-      {/* ========== SCENE 4: ARCHITECTURE ========== */}
-      <section ref={setSectionRef(4)} className="min-h-screen snap-start py-20">
-        <div className="max-w-[1100px] mx-auto px-8">
-          <Fade progress={sectionProgress.get(4) ?? 0}>
-            <p className="font-[Silkscreen] text-[10px] text-coral tracking-[0.2em] mb-3">// 04 — ARCHITECTURE</p>
-            <h2 className="font-[Silkscreen] text-ink text-2xl mb-10">HOW IT'S BUILT</h2>
-          </Fade>
-
-          <Fade progress={sectionProgress.get(4) ?? 0} delay={0.1}>
-            <div className="flex justify-center mb-10">
-              <PixelDataFlow active={Math.abs(activeSection - 4) <= 1} />
-            </div>
-          </Fade>
-
-          <div className="grid grid-cols-2 gap-8">
-            <Fade progress={sectionProgress.get(4) ?? 0} delay={0.15}>
-              <div className="border border-paper3 bg-paper/60 p-5">
-                <p className="font-[Silkscreen] text-[10px] text-coral tracking-[0.14em] mb-4">REGISTRATION FLOW</p>
-                <div className="space-y-2">
-                  {['Human authenticates via Clerk', 'Submits agent name + sample trajectory', 'System computes behavioral signature', 'Cryptographic agent key generated (bcrypt)', 'Key returned once — never stored in plaintext'].map((s, i) => (
-                    <div key={i} className="flex gap-3"><span className="text-coral font-[Silkscreen] text-[9px]">{i + 1}.</span><span className="text-[12px] text-muted">{s}</span></div>
-                  ))}
-                </div>
-              </div>
-            </Fade>
-
-            <Fade progress={sectionProgress.get(4) ?? 0} delay={0.2}>
-              <div className="border border-paper3 bg-paper/60 p-5">
-                <p className="font-[Silkscreen] text-[10px] text-green tracking-[0.14em] mb-4">VERIFICATION FLOW</p>
-                <div className="space-y-2">
-                  {['Agent presents agent_id + agent_key + trajectory', 'Cryptographic check: key matches bcrypt hash', 'Behavioral check: trajectory vs stored signature', 'If both pass → RS256 JWT issued with act.sub claim'].map((s, i) => (
-                    <div key={i} className="flex gap-3"><span className="text-green font-[Silkscreen] text-[9px]">{i + 1}.</span><span className="text-[12px] text-muted">{s}</span></div>
-                  ))}
-                </div>
-              </div>
-            </Fade>
-          </div>
-
-          <Fade progress={sectionProgress.get(4) ?? 0} delay={0.25}>
-            <p className="font-[Silkscreen] text-[10px] text-peach tracking-[0.14em] mt-10 mb-4">API ENDPOINTS</p>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="border border-paper3 bg-paper/60 p-4">
-                <p className="text-[10px] text-coral tracking-[0.12em] mb-3">AUTHENTICATED (CLERK)</p>
-                {['/agents/register → POST', '/agents → GET', '/agents/{id} → GET', '/agents/{id} → DELETE', '/agents/{id}/refine → POST', '/agents/{id}/rotate-key → POST'].map((e, i) => (
-                  <p key={i} className="text-[10px] font-mono text-dim py-0.5">{e}</p>
-                ))}
-              </div>
-              <div className="border border-paper3 bg-paper/60 p-4">
-                <p className="text-[10px] text-green tracking-[0.12em] mb-3">OPEN (NO AUTH)</p>
-                {['/verify → POST', '/compare → POST', '/agents/{id}/public → GET', '/.well-known/jwks.json → GET', '/health → GET'].map((e, i) => (
-                  <p key={i} className="text-[10px] font-mono text-dim py-0.5">{e}</p>
-                ))}
-              </div>
-            </div>
-          </Fade>
-        </div>
-      </section>
-
-      <PixelDivider direction="right" />
-
-      {/* ========== SCENE 5: SECURITY ========== */}
-      <section ref={setSectionRef(5)} className="min-h-screen snap-start py-20">
-        <div className="max-w-[1100px] mx-auto px-8">
-          <Fade progress={sectionProgress.get(5) ?? 0}>
-            <p className="font-[Silkscreen] text-[10px] text-coral tracking-[0.2em] mb-3">// 05 — SECURITY</p>
-            <h2 className="font-[Silkscreen] text-ink text-2xl mb-10">THREAT MODEL</h2>
-          </Fade>
-
-          <div className="grid grid-cols-2 gap-16 items-start">
-            <div>
-              <Fade progress={sectionProgress.get(5) ?? 0} delay={0.1}>
-                <div className="space-y-3">
-                  {[
-                    { threat: 'Random attacker without key', defense: 'Agent key (bcrypt, 48-byte random)', strength: 'STRONG', sColor: 'text-green' },
-                    { threat: 'Key stolen, behavior unknown', defense: 'Behavioral signature mismatch', strength: 'SOFT', sColor: 'text-amber' },
-                    { threat: 'Agent silently swapped', defense: 'Trajectory drift detection', strength: 'SOFT', sColor: 'text-amber' },
-                    { threat: 'Human account compromised', defense: 'Clerk deprovisioning → key revocation', strength: 'STRONG', sColor: 'text-green' },
-                    { threat: 'Key compromise detected', defense: 'Key rotation (old key invalidated)', strength: 'STRONG', sColor: 'text-green' },
-                  ].map((row, i) => (
-                    <div key={i} className="border border-paper3 bg-paper/60 p-4 flex justify-between items-start gap-4">
-                      <div className="flex-1">
-                        <p className="text-[11px] text-red mb-1">{row.threat}</p>
-                        <p className="text-[11px] text-muted">{row.defense}</p>
-                      </div>
-                      <span className={`text-[9px] tracking-[0.14em] font-bold ${row.sColor} shrink-0`}>{row.strength}</span>
-                    </div>
-                  ))}
-                </div>
-              </Fade>
-            </div>
-
-            <Fade progress={sectionProgress.get(5) ?? 0} delay={0.15}>
-              <div className="flex justify-center sticky top-[20vh]">
-                <PixelShield width={260} height={260} />
-              </div>
-            </Fade>
-          </div>
-        </div>
-      </section>
-
-      <PixelDivider direction="left" />
-
-      {/* ========== SCENE 6: COMPETITIVE LANDSCAPE ========== */}
-      <section ref={setSectionRef(6)} className="min-h-screen snap-start py-20">
-        <div className="max-w-[1100px] mx-auto px-8">
-          <Fade progress={sectionProgress.get(6) ?? 0}>
-            <p className="font-[Silkscreen] text-[10px] text-coral tracking-[0.2em] mb-3">// 06 — LANDSCAPE</p>
-            <h2 className="font-[Silkscreen] text-ink text-2xl mb-10">COMPETITIVE LANDSCAPE</h2>
-          </Fade>
-
-          <div className="grid grid-cols-2 gap-16 items-start">
-            <div className="space-y-6">
-              <Fade progress={sectionProgress.get(6) ?? 0} delay={0.1}>
-                <p className="font-[Silkscreen] text-[10px] text-amber tracking-[0.14em] mb-3">STANDARDS BODIES</p>
-                <div className="space-y-2 text-[12px] text-muted">
-                  <p><span className="text-ink">IETF WIMSE</span> — foundational workload identity standard</p>
-                  <p><span className="text-ink">NVIDIA AIP</span> — Ed25519 keys, Agent Authentication Tokens</p>
-                  <p><span className="text-ink">OIDC-A 1.0</span> — delegation chain validation for LLM agents</p>
-                  <p><span className="text-ink">NIST CAISI</span> — AI Agent Interoperability Profile (Q4 2026)</p>
-                </div>
-              </Fade>
-
-              <Fade progress={sectionProgress.get(6) ?? 0} delay={0.2}>
-                <p className="font-[Silkscreen] text-[10px] text-green tracking-[0.14em] mb-3">OPEN SOURCE</p>
-                <div className="space-y-2 text-[12px] text-muted">
-                  <p><span className="text-ink">ZeroID</span> — RFC 8693 token exchange, Python/TS/Rust. No behavioral verification.</p>
-                  <p><span className="text-ink">AIP</span> — Ed25519 per tool call, MCP proxy. Also an IETF draft.</p>
-                  <p><span className="text-ink">Microsoft AGT</span> — 7-package governance toolkit. MIT license.</p>
-                </div>
-              </Fade>
-
-              <Fade progress={sectionProgress.get(6) ?? 0} delay={0.3}>
-                <p className="font-[Silkscreen] text-[10px] text-red tracking-[0.14em] mb-3">PLATFORM (VENDOR-LOCKED)</p>
-                <div className="space-y-2 text-[12px] text-muted">
-                  <p><span className="text-ink">Microsoft Entra Agent ID</span> — most complete, GA March 2026. Microsoft-only.</p>
-                  <p><span className="text-ink">Google Vertex AI</span> — agents get IAM principals. Google-only.</p>
-                  <p><span className="text-ink">Okta/Auth0</span> — "for AI Agents" GA 2025-2026. Proprietary.</p>
-                </div>
-              </Fade>
-
-              <Fade progress={sectionProgress.get(6) ?? 0} delay={0.35}>
-                <div className="border border-coral/30 bg-coral/5 p-4 mt-4">
-                  <p className="text-[12px] text-coral font-bold">No production system implements behavioral verification.</p>
-                  <p className="text-[11px] text-muted mt-1">This is the unique contribution of World of Agents.</p>
-                </div>
-              </Fade>
-            </div>
-
-            <Fade progress={sectionProgress.get(6) ?? 0} delay={0.1}>
-              <div className="flex justify-center sticky top-[20vh]">
-                <PixelCompetitorGrid active={Math.abs(activeSection - 6) <= 1} />
-              </div>
-            </Fade>
-          </div>
-        </div>
-      </section>
-
-      <PixelDivider direction="right" />
-
-      {/* ========== SCENE 7: ROADMAP + CTA ========== */}
-      <section ref={setSectionRef(7)} className="min-h-screen snap-start py-20">
-        <div className="max-w-[1100px] mx-auto px-8">
-          <Fade progress={sectionProgress.get(7) ?? 0}>
-            <p className="font-[Silkscreen] text-[10px] text-coral tracking-[0.2em] mb-3">// 07 — ROADMAP</p>
-            <h2 className="font-[Silkscreen] text-ink text-2xl mb-6">WHAT'S NEXT</h2>
-          </Fade>
-
-          <Fade progress={sectionProgress.get(7) ?? 0} delay={0.1}>
-            <div className="flex justify-center mb-10">
-              <PixelTimeline active={Math.abs(activeSection - 7) <= 1} />
-            </div>
-          </Fade>
-
-          <Fade progress={sectionProgress.get(7) ?? 0} delay={0.15}>
-            <div className="grid grid-cols-3 gap-4 mb-16">
-              {[
-                { phase: 'NEXT 90 DAYS', color: 'text-coral', items: ['IP/CIDR posture checking', 'Per-action risk scoring', 'World ID integration', 'Agent versioning + drift alerts'] },
-                { phase: '90–180 DAYS', color: 'text-peach', items: ['OIDC login (Okta, Google, Auth0)', 'OAuth 2.0 Token Exchange broker', 'Scope pre-authorization UX', 'Verifier SDK (TypeScript, Python)', 'MCP server reference integration'] },
-                { phase: '180–365 DAYS', color: 'text-ink', items: ['Lifecycle webhooks', 'Cross-org delegation', 'A2A reference verifier', 'IETF submission'] },
-              ].map((p, i) => (
-                <div key={i} className="border border-paper3 bg-paper/60 p-5">
-                  <p className={`font-[Silkscreen] text-[10px] ${p.color} tracking-[0.14em] mb-3`}>{p.phase}</p>
-                  <div className="space-y-1.5">
-                    {p.items.map((item, j) => (
-                      <div key={j} className="flex items-start gap-2">
-                        <div className="w-1 h-1 bg-paper4 mt-1.5 shrink-0" />
-                        <p className="text-[11px] text-muted">{item}</p>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </Fade>
-
-          <Fade progress={sectionProgress.get(7) ?? 0} delay={0.25}>
-            <div className="text-center py-12">
-              <p className="font-[Silkscreen] text-coral text-xl leading-relaxed mb-8" style={{ textShadow: '0 0 20px rgba(217,119,87,0.2)' }}>
-                THE MISSING IDENTITY LAYER<br/>FOR AI AGENTS
-              </p>
-              <p className="text-[13px] text-muted max-w-lg mx-auto mb-10 leading-relaxed">
-                We do not reinvent the identity wheel. We finish it.
-              </p>
-              <div className="flex gap-4 justify-center">
-                <Link to="/" className="px-6 py-2.5 bg-coral text-paper text-[11px] font-bold tracking-[0.14em] hover:bg-coral-deep transition-colors"
-                  style={{ boxShadow: '0 0 20px rgba(217,119,87,0.25)' }}>
-                  ENTER PLATFORM
-                </Link>
-                <a href="https://github.com/yskew/worldofagents" target="_blank" rel="noopener"
-                  className="px-6 py-2.5 border border-paper4 text-[11px] text-muted tracking-[0.14em] hover:border-coral/40 hover:text-peach transition-colors">
-                  VIEW ON GITHUB
-                </a>
-              </div>
-            </div>
-          </Fade>
-        </div>
-
-        <footer className="border-t border-paper3 py-6 mt-12">
-          <div className="max-w-[1100px] mx-auto px-8 flex justify-between items-center">
-            <span className="text-[10px] text-dim tracking-[0.1em]">WORLD OF AGENTS · v0.1</span>
-            <span className="text-[10px] text-dim tracking-[0.1em]">RESEARCH MVP</span>
-          </div>
-        </footer>
-      </section>
+      )}
     </div>
   );
 }
 
 
-function FeatureCards() {
+function ContentPanel({ section }: { section: number }) {
   const [expanded, setExpanded] = useState<number | null>(null);
 
-  const features = [
-    { num: '01', title: 'TOOL CALL HISTOGRAM', short: 'Normalized frequency distribution of tools/actions', detail: 'For a coding agent: {search: 0.2, read_file: 0.3, edit_file: 0.2, run_tests: 0.15, message: 0.15}. Two agents with similar distributions are likely the same type.' },
-    { num: '02', title: 'BIGRAM TRANSITIONS', short: 'Markov model of sequential tool-call transitions', detail: '"After calling search, the agent calls read_file 60% of the time and edit_file 40%." Captures behavioral flow, not just which tools — the order matters.' },
-    { num: '03', title: 'TRIGRAM TRANSITIONS', short: 'Three-step sequence probabilities', detail: '"After search → read_file, the agent calls edit_file 80% of the time." Captures complex behavioral patterns that bigrams miss.' },
-    { num: '04', title: 'RESPONSE LENGTH STATS', short: 'Mean, variance, skewness of message content lengths', detail: 'A verbose agent produces different statistics than a terse one. Consistent across sessions for the same model + prompt combination.' },
-    { num: '05', title: 'VOCABULARY STATS', short: 'Token diversity, frequency distribution, type-token ratio', detail: 'Different models and system prompts produce measurably different vocabularies. We track unique count, total count, TTR, and top-20 tokens.' },
-    { num: '06', title: 'TIMING STATS', short: 'Inter-action intervals: mean, std, max', detail: 'An agent that takes 2 seconds between actions has a different timing profile than one that takes 30 seconds. Only computed when timestamps are provided.' },
-    { num: '07', title: 'STRUCTURAL FEATURES', short: 'Sequence length, action diversity, tool-call ratio, error rate', detail: 'High-level trajectory shape. Captures overall behavioral patterns including how the agent handles errors and retries.' },
-  ];
+  const panelClass = "bg-paper/85 backdrop-blur-sm border border-paper3 p-6 space-y-4";
 
-  return (
-    <div className="space-y-2">
-      {features.map((f, i) => (
-        <button key={i} onClick={() => setExpanded(expanded === i ? null : i)} className="w-full text-left border border-paper3 bg-paper/60 p-3 hover:border-paper4 transition-colors">
-          <div className="flex items-center gap-3">
-            <span className="text-coral font-[Silkscreen] text-[10px]">{f.num}</span>
-            <span className="text-[11px] text-ink font-bold flex-1">{f.title}</span>
-            <span className="text-[10px] text-dim">{expanded === i ? '−' : '+'}</span>
-          </div>
-          <p className="text-[10px] text-dim mt-1 ml-8">{f.short}</p>
-          {expanded === i && (
-            <p className="text-[11px] text-muted mt-2 ml-8 leading-relaxed border-t border-paper3 pt-2">{f.detail}</p>
-          )}
-        </button>
-      ))}
+  if (section === 0) return (
+    <div className="text-center py-8">
+      <p className="font-[Silkscreen] text-[10px] text-coral tracking-[0.2em] mb-3">// RESEARCH THESIS</p>
+      <h1 className="font-[Silkscreen] text-coral text-4xl leading-tight mb-4" style={{ textShadow: '0 0 30px rgba(217,119,87,0.3)' }}>
+        WORLD OF<br/>AGENTS
+      </h1>
+      <p className="font-[Silkscreen] text-dim text-[11px] tracking-[0.14em] mb-6">THE MISSING IDENTITY LAYER FOR AI AGENTS</p>
+      <p className="text-[13px] text-muted leading-relaxed max-w-md mx-auto">
+        An interactive journey through the thesis, architecture, and research behind the agent identity platform.
+      </p>
     </div>
   );
+
+  if (section === 1) return (
+    <div className={panelClass}>
+      <p className="font-[Silkscreen] text-[10px] text-coral tracking-[0.2em]">// 01 — THE PROBLEM</p>
+      <h2 className="font-[Silkscreen] text-ink text-xl">AGENTS HAVE NO IDENTITY</h2>
+      <p className="text-[13px] text-muted leading-relaxed">
+        Every AI agent acting in the world today does so with either no identity at all, or a stolen one — typically the personal session token of the human who deployed it.
+      </p>
+      <div className="border-l-2 border-coral pl-4 py-1">
+        <p className="text-[11px] text-coral tracking-[0.1em] mb-1">OPTION A: NO IDENTITY</p>
+        <p className="text-[12px] text-muted">The agent operates with no authentication, inheriting the host machine's permissions.</p>
+      </div>
+      <div className="border-l-2 border-red pl-4 py-1">
+        <p className="text-[11px] text-red tracking-[0.1em] mb-1">OPTION B: STOLEN IDENTITY</p>
+        <p className="text-[12px] text-muted">A developer copies their OAuth token into the agent's environment. Full, indistinguishable access.</p>
+      </div>
+      <p className="font-[Silkscreen] text-[10px] text-peach tracking-[0.14em] mt-4">THREE UNANSWERABLE QUESTIONS</p>
+      {['"Which human is responsible for this action?"', '"Is this the same agent that was authorized?"', '"Is this agent behaving normally?"'].map((q, i) => (
+        <div key={i} className="flex gap-3 items-start">
+          <span className="text-coral font-[Silkscreen] text-[10px]">{String(i + 1).padStart(2, '0')}</span>
+          <p className="text-[12px] text-peach">{q}</p>
+        </div>
+      ))}
+      <p className="font-[Silkscreen] text-[10px] text-peach tracking-[0.14em] mt-4">WHY NOW</p>
+      <p className="text-[12px] text-muted leading-relaxed">MCP and A2A protocols are exploding with no identity story. Enterprise adoption is accelerating. NIST, IETF, and CSA are building standards — the window to influence them is now.</p>
+    </div>
+  );
+
+  if (section === 2) return (
+    <div className={panelClass}>
+      <p className="font-[Silkscreen] text-[10px] text-coral tracking-[0.2em]">// 02 — THE INSIGHT</p>
+      <h2 className="font-[Silkscreen] text-ink text-xl">FOUR LAYERS, TWO MISSING</h2>
+      <div className="space-y-1">
+        {[
+          { label: 'HUMAN IDENTITY', desc: 'Okta, Google, Azure AD', s: 'EXISTS', c: 'text-green' },
+          { label: 'BINDING', desc: 'Provable link: human ↔ agent', s: 'NEW', c: 'text-coral' },
+          { label: 'AGENT RUNTIME', desc: 'Crypto key + behavioral signature', s: 'NEW', c: 'text-coral' },
+          { label: 'AUTHORIZATION', desc: 'OAuth 2.0 / OIDC / RFC 8693', s: 'EXISTS', c: 'text-green' },
+        ].map((l, i) => (
+          <div key={i} className="flex justify-between items-center bg-paper2/80 px-3 py-2">
+            <div><p className="text-[11px] text-ink font-bold">{l.label}</p><p className="text-[10px] text-dim">{l.desc}</p></div>
+            <span className={`text-[9px] tracking-[0.14em] font-bold ${l.c}`}>{l.s}</span>
+          </div>
+        ))}
+      </div>
+      <p className="text-[12px] text-muted leading-relaxed">
+        The agent does not get its own credentials. It gets the <span className="text-peach">human's credentials, with attribution</span> via an
+        <code className="text-coral bg-paper3 px-1 text-[10px] mx-1">act.sub</code> claim in the JWT.
+      </p>
+      <div className="bg-paper2 border border-paper3 p-3">
+        <pre className="text-[10px] text-ink font-mono leading-relaxed">{`{ "sub": "alice@co.com",
+  "act": { "sub": "agt_xyz" },
+  "similarity_score": 0.94 }`}</pre>
+      </div>
+    </div>
+  );
+
+  if (section === 3) return (
+    <div className={panelClass}>
+      <p className="font-[Silkscreen] text-[10px] text-coral tracking-[0.2em]">// 03 — CORE IP</p>
+      <h2 className="font-[Silkscreen] text-ink text-xl">BEHAVIORAL SIGNATURES</h2>
+      <p className="text-[12px] text-muted leading-relaxed">
+        Every AI agent has a behavioral fingerprint. We extract 7 feature types from trajectories and compare using a weighted ensemble.
+      </p>
+      <div className="space-y-1">
+        {[
+          { n: '01', t: 'TOOL CALL HISTOGRAM', d: 'Normalized frequency distribution of tools/actions' },
+          { n: '02', t: 'BIGRAM TRANSITIONS', d: 'Markov model of sequential tool-call transitions' },
+          { n: '03', t: 'TRIGRAM TRANSITIONS', d: 'Three-step sequence probabilities' },
+          { n: '04', t: 'RESPONSE LENGTH STATS', d: 'Mean, variance, skewness of message lengths' },
+          { n: '05', t: 'VOCABULARY STATS', d: 'Token diversity, type-token ratio, top-20 tokens' },
+          { n: '06', t: 'TIMING STATS', d: 'Inter-action intervals when timestamps available' },
+          { n: '07', t: 'STRUCTURAL FEATURES', d: 'Sequence length, action diversity, error rate' },
+        ].map((f, i) => (
+          <button key={i} onClick={() => setExpanded(expanded === i ? null : i)} className="w-full text-left bg-paper2/60 px-3 py-2 hover:bg-paper2 transition-colors">
+            <div className="flex gap-2 items-center"><span className="text-coral font-[Silkscreen] text-[9px]">{f.n}</span><span className="text-[11px] text-ink font-bold">{f.t}</span></div>
+            {expanded === i && <p className="text-[10px] text-muted mt-1 ml-6">{f.d}</p>}
+          </button>
+        ))}
+      </div>
+      <div className="grid grid-cols-4 gap-1 text-[10px] mt-2">
+        {[['JSD', '25%'], ['Cosine', '30%'], ['Markov', '25%'], ['Stats', '20%']].map(([m, w], i) => (
+          <div key={i} className="bg-paper2/80 p-2 text-center"><p className="text-dim">{m}</p><p className="text-coral font-bold">{w}</p></div>
+        ))}
+      </div>
+      <div className="border-l-2 border-amber pl-3 py-1 mt-2">
+        <p className="text-[10px] text-amber">Behavioral signatures are anomaly detection, not authentication. The cryptographic hardness is in the key + IdP token.</p>
+      </div>
+    </div>
+  );
+
+  if (section === 4) return (
+    <div className={panelClass}>
+      <p className="font-[Silkscreen] text-[10px] text-coral tracking-[0.2em]">// 04 — ARCHITECTURE</p>
+      <h2 className="font-[Silkscreen] text-ink text-xl">HOW IT'S BUILT</h2>
+      <div className="grid grid-cols-2 gap-3">
+        <div className="bg-paper2/80 p-3">
+          <p className="font-[Silkscreen] text-[9px] text-coral mb-2">REGISTRATION</p>
+          {['Authenticate via Clerk', 'Submit trajectory sample', 'Compute signature', 'Generate bcrypt key', 'Return key once'].map((s, i) => (
+            <p key={i} className="text-[10px] text-muted"><span className="text-coral mr-1">{i + 1}.</span>{s}</p>
+          ))}
+        </div>
+        <div className="bg-paper2/80 p-3">
+          <p className="font-[Silkscreen] text-[9px] text-green mb-2">VERIFICATION</p>
+          {['Present ID + key + trajectory', 'Crypto check: bcrypt hash', 'Behavioral check: signature match', 'Issue RS256 JWT with act.sub'].map((s, i) => (
+            <p key={i} className="text-[10px] text-muted"><span className="text-green mr-1">{i + 1}.</span>{s}</p>
+          ))}
+        </div>
+      </div>
+      <p className="font-[Silkscreen] text-[9px] text-peach tracking-[0.14em] mt-3">12 API ENDPOINTS</p>
+      <div className="grid grid-cols-2 gap-2 text-[10px]">
+        <div className="bg-paper2/80 p-2">
+          <p className="text-coral text-[9px] mb-1">AUTHENTICATED</p>
+          {['POST /agents/register', 'GET /agents', 'DELETE /agents/{id}', 'POST /refine', 'POST /rotate-key'].map((e, i) => (
+            <p key={i} className="font-mono text-dim">{e}</p>
+          ))}
+        </div>
+        <div className="bg-paper2/80 p-2">
+          <p className="text-green text-[9px] mb-1">OPEN</p>
+          {['POST /verify', 'POST /compare', 'GET /public', 'GET /.well-known/jwks.json'].map((e, i) => (
+            <p key={i} className="font-mono text-dim">{e}</p>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+
+  if (section === 5) return (
+    <div className={panelClass}>
+      <p className="font-[Silkscreen] text-[10px] text-coral tracking-[0.2em]">// 05 — SECURITY</p>
+      <h2 className="font-[Silkscreen] text-ink text-xl">THREAT MODEL</h2>
+      <div className="space-y-2">
+        {[
+          { t: 'Random attacker without key', d: 'Agent key (bcrypt, 48-byte)', s: 'STRONG', c: 'text-green' },
+          { t: 'Key stolen, behavior unknown', d: 'Behavioral signature mismatch', s: 'SOFT', c: 'text-amber' },
+          { t: 'Agent silently swapped', d: 'Trajectory drift detection', s: 'SOFT', c: 'text-amber' },
+          { t: 'Human account compromised', d: 'Clerk revocation → keys invalidated', s: 'STRONG', c: 'text-green' },
+          { t: 'Key compromise detected', d: 'Key rotation (old key dies)', s: 'STRONG', c: 'text-green' },
+        ].map((r, i) => (
+          <div key={i} className="flex justify-between items-start bg-paper2/60 px-3 py-2">
+            <div><p className="text-[11px] text-red">{r.t}</p><p className="text-[10px] text-muted">{r.d}</p></div>
+            <span className={`text-[9px] tracking-[0.14em] font-bold ${r.c} shrink-0`}>{r.s}</span>
+          </div>
+        ))}
+      </div>
+      <p className="text-[11px] text-muted leading-relaxed mt-2">
+        The cryptographic hardness is in the key and the IdP. Behavioral signatures are anomaly detection — honest about what's strong vs. soft.
+      </p>
+    </div>
+  );
+
+  if (section === 6) return (
+    <div className={panelClass}>
+      <p className="font-[Silkscreen] text-[10px] text-coral tracking-[0.2em]">// 06 — LANDSCAPE</p>
+      <h2 className="font-[Silkscreen] text-ink text-xl">COMPETITIVE LANDSCAPE</h2>
+      <div className="space-y-3">
+        <div>
+          <p className="text-[10px] text-amber tracking-[0.12em] mb-1">STANDARDS</p>
+          <p className="text-[11px] text-muted">IETF WIMSE · NVIDIA AIP · OIDC-A 1.0 · NIST CAISI</p>
+        </div>
+        <div>
+          <p className="text-[10px] text-green tracking-[0.12em] mb-1">OPEN SOURCE</p>
+          <p className="text-[11px] text-muted">ZeroID (RFC 8693, no behavioral) · AIP (Ed25519) · Microsoft AGT</p>
+        </div>
+        <div>
+          <p className="text-[10px] text-red tracking-[0.12em] mb-1">PLATFORM (VENDOR-LOCKED)</p>
+          <p className="text-[11px] text-muted">Microsoft Entra · Google Vertex · Okta/Auth0</p>
+        </div>
+      </div>
+      <div className="border border-coral/30 bg-coral/5 p-3 mt-2">
+        <p className="text-[11px] text-coral font-bold">No production system implements behavioral verification.</p>
+        <p className="text-[10px] text-muted mt-0.5">This is our unique contribution.</p>
+      </div>
+    </div>
+  );
+
+  if (section === 7) return (
+    <div className={panelClass}>
+      <p className="font-[Silkscreen] text-[10px] text-coral tracking-[0.2em]">// 07 — ROADMAP</p>
+      <h2 className="font-[Silkscreen] text-ink text-xl">WHAT'S NEXT</h2>
+      <div className="grid grid-cols-3 gap-2">
+        {[
+          { phase: '90D', color: 'text-coral', items: ['IP/CIDR posture', 'Risk scoring', 'World ID', 'Drift alerts'] },
+          { phase: '180D', color: 'text-peach', items: ['OIDC login', 'Token exchange', 'Verifier SDK', 'MCP reference'] },
+          { phase: '365D', color: 'text-ink', items: ['Webhooks', 'Cross-org', 'A2A verifier', 'IETF submission'] },
+        ].map((p, i) => (
+          <div key={i} className="bg-paper2/80 p-3">
+            <p className={`font-[Silkscreen] text-[9px] ${p.color} mb-2`}>{p.phase}</p>
+            {p.items.map((item, j) => (
+              <p key={j} className="text-[10px] text-muted">· {item}</p>
+            ))}
+          </div>
+        ))}
+      </div>
+      <div className="text-center mt-4">
+        <p className="font-[Silkscreen] text-coral text-[14px] mb-4" style={{ textShadow: '0 0 15px rgba(217,119,87,0.2)' }}>
+          WE DO NOT REINVENT THE IDENTITY WHEEL. WE FINISH IT.
+        </p>
+        <div className="flex gap-3 justify-center">
+          <Link to="/" className="pointer-events-auto px-5 py-2 bg-coral text-paper text-[10px] font-bold tracking-[0.14em] hover:bg-coral-deep transition-colors"
+            style={{ boxShadow: '0 0 16px rgba(217,119,87,0.25)' }}>
+            ENTER PLATFORM
+          </Link>
+          <a href="https://github.com/yskew/worldofagents" target="_blank" rel="noopener"
+            className="pointer-events-auto px-5 py-2 border border-paper4 text-[10px] text-muted tracking-[0.14em] hover:border-coral/40 hover:text-peach transition-colors">
+            GITHUB
+          </a>
+        </div>
+      </div>
+    </div>
+  );
+
+  return null;
 }
