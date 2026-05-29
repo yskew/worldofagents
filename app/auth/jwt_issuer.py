@@ -14,12 +14,19 @@ from app.config import settings
 
 class JWTIssuer:
     def __init__(self, private_key_pem: str | None = None, public_key_pem: str | None = None):
+        loaded = False
         if private_key_pem and public_key_pem:
-            self._private_key = serialization.load_pem_private_key(
-                private_key_pem.encode(), password=None
-            )
-            self._public_key = serialization.load_pem_public_key(public_key_pem.encode())
-        else:
+            try:
+                priv = private_key_pem.replace("\\n", "\n")
+                pub = public_key_pem.replace("\\n", "\n")
+                self._private_key = serialization.load_pem_private_key(
+                    priv.encode(), password=None
+                )
+                self._public_key = serialization.load_pem_public_key(pub.encode())
+                loaded = True
+            except Exception:
+                pass
+        if not loaded:
             self._private_key = rsa.generate_private_key(
                 public_exponent=65537, key_size=2048
             )
