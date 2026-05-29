@@ -10,7 +10,7 @@ interface Props {
 
 export default function Landing({ onEnter }: Props) {
   return (
-    <div className="min-h-screen relative">
+    <div className="min-h-screen relative overflow-x-hidden">
       {/* scanlines */}
       <div className="fixed inset-0 pointer-events-none z-50"
         style={{
@@ -56,7 +56,7 @@ export default function Landing({ onEnter }: Props) {
         </div>
       </section>
 
-      <PixelDivider />
+      <PixelDivider direction="right" />
 
       {/* the problem */}
       <section id="thesis" className="max-w-[1100px] mx-auto px-8 py-20">
@@ -85,7 +85,7 @@ export default function Landing({ onEnter }: Props) {
         </div>
       </section>
 
-      <PixelDivider />
+      <PixelDivider direction="left" />
 
       {/* the insight */}
       <section className="max-w-[1100px] mx-auto px-8 py-20">
@@ -127,7 +127,7 @@ export default function Landing({ onEnter }: Props) {
         </p>
       </section>
 
-      <PixelDivider />
+      <PixelDivider direction="right" />
 
       {/* how it works */}
       <section className="max-w-[1100px] mx-auto px-8 py-20">
@@ -158,7 +158,7 @@ export default function Landing({ onEnter }: Props) {
         </div>
       </section>
 
-      <PixelDivider />
+      <PixelDivider direction="left" />
 
       {/* the token */}
       <section className="max-w-[1100px] mx-auto px-8 py-20">
@@ -197,7 +197,7 @@ export default function Landing({ onEnter }: Props) {
         </div>
       </section>
 
-      <PixelDivider />
+      <PixelDivider direction="right" />
 
       {/* CTA */}
       <section className="max-w-[1100px] mx-auto px-8 py-24 text-center">

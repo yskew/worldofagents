@@ -1,10 +1,25 @@
 const BASE = import.meta.env.VITE_API_URL || '/api';
 
-async function request<T>(path: string, opts?: RequestInit): Promise<T> {
-  const res = await fetch(`${BASE}${path}`, {
-    headers: { 'Content-Type': 'application/json', ...opts?.headers },
-    ...opts,
-  });
+let _getToken: (() => Promise<string | null>) | null = null;
+
+export function setTokenGetter(fn: () => Promise<string | null>) {
+  _getToken = fn;
+}
+
+async function request<T>(path: string, opts?: RequestInit, auth = false): Promise<T> {
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    ...((opts?.headers as Record<string, string>) || {}),
+  };
+
+  if (auth && _getToken) {
+    const token = await _getToken();
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+  }
+
+  const res = await fetch(`${BASE}${path}`, { ...opts, headers });
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: res.statusText }));
     throw new Error(err.detail || res.statusText);
@@ -74,30 +89,23 @@ export interface TrajectoryStep {
 }
 
 export const api = {
+  // open endpoints — no auth
   health: () => request<{ status: string }>('/health'),
-
-  listAgents: () => request<{ agents: Agent[] }>('/agents'),
-
-  getAgent: (id: string) => request<Agent>(`/agents/${id}`),
-
-  registerAgent: (data: { name: string; description?: string; sample_trajectory: TrajectoryStep[] }) =>
-    request<RegisterResponse>('/agents/register', { method: 'POST', body: JSON.stringify(data) }),
-
-  deleteAgent: (id: string) => request<void>(`/agents/${id}`, { method: 'DELETE' }),
-
-  refineAgent: (id: string, trajectory: TrajectoryStep[]) =>
-    request<Agent>(`/agents/${id}/refine`, { method: 'POST', body: JSON.stringify({ trajectory }) }),
-
-  rotateKey: (id: string) =>
-    request<{ agent_key: string }>(`/agents/${id}/rotate-key`, { method: 'POST' }),
-
   verify: (data: { agent_id: string; agent_key: string; trajectory: TrajectoryStep[] }) =>
     request<VerifyResponse>('/verify', { method: 'POST', body: JSON.stringify(data) }),
-
   compare: (trajectory_a: TrajectoryStep[], trajectory_b: TrajectoryStep[]) =>
     request<CompareResponse>('/compare', { method: 'POST', body: JSON.stringify({ trajectory_a, trajectory_b }) }),
-
   publicProfile: (id: string) => request<PublicProfile>(`/agents/${id}/public`),
-
   jwks: () => request<{ keys: unknown[] }>('/.well-known/jwks.json'),
+
+  // authenticated endpoints — send Clerk token
+  listAgents: () => request<{ agents: Agent[] }>('/agents', undefined, true),
+  getAgent: (id: string) => request<Agent>(`/agents/${id}`, undefined, true),
+  registerAgent: (data: { name: string; description?: string; sample_trajectory: TrajectoryStep[] }) =>
+    request<RegisterResponse>('/agents/register', { method: 'POST', body: JSON.stringify(data) }, true),
+  deleteAgent: (id: string) => request<void>(`/agents/${id}`, { method: 'DELETE' }, true),
+  refineAgent: (id: string, trajectory: TrajectoryStep[]) =>
+    request<Agent>(`/agents/${id}/refine`, { method: 'POST', body: JSON.stringify({ trajectory }) }, true),
+  rotateKey: (id: string) =>
+    request<{ agent_key: string }>(`/agents/${id}/rotate-key`, { method: 'POST' }, true),
 };

@@ -34,10 +34,15 @@ async def auth_client(db_session):
 
 
 @pytest.mark.asyncio
-async def test_unauthenticated_request_uses_demo_in_dev_mode(client):
-    """In dev mode (no real Clerk key), unauthenticated requests fall back to demo user."""
-    resp = await client.get("/agents")
-    assert resp.status_code == 200
+async def test_unauthenticated_request_rejected_in_prod_mode(client):
+    """With a real Clerk key configured, unauthenticated requests are rejected."""
+    from app.config import settings
+    if settings.CLERK_SECRET_KEY and not settings.CLERK_SECRET_KEY.startswith("sk_test_xxx"):
+        resp = await client.get("/agents")
+        assert resp.status_code == 401
+    else:
+        resp = await client.get("/agents")
+        assert resp.status_code == 200
 
 
 @pytest.mark.asyncio
