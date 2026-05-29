@@ -30,8 +30,6 @@ export default function PixelTransition({ active, onComplete, children }: Props)
     const blockSize = 12;
     const cols = Math.ceil(w / blockSize);
     const rows = Math.ceil(h / blockSize);
-    const totalBlocks = rows * cols;
-
     // build reveal order: row by row, left to right, with slight stagger
     const order: { r: number; c: number; delay: number }[] = [];
     for (let r = 0; r < rows; r++) {
