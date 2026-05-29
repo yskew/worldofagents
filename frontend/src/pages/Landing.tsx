@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom';
 import GlobeCanvas from '../components/GlobeCanvas';
 import PixelShield from '../components/PixelShield';
 import PixelRobotFight from '../components/PixelRobotFight';
@@ -41,10 +42,10 @@ export default function Landing({ onEnter }: Props) {
                 style={{ boxShadow: '0 0 20px rgba(217,119,87,0.3)' }}>
                 ENTER PLATFORM
               </button>
-              <a href="#thesis"
+              <Link to="/docs"
                 className="px-6 py-2.5 border border-paper4 text-[11px] text-muted tracking-[0.14em] hover:border-coral/40 hover:text-peach transition-colors">
-                READ MORE
-              </a>
+                READ THESIS
+              </Link>
             </div>
           </div>
 
