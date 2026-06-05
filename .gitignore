@@ -15,3 +15,7 @@ htmlcov/
 .coverage
 *.db
 pgdata/
+.DS_Store
+node_modules/
+frontend/.env.local
+frontend/dist/
