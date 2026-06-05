@@ -221,7 +221,7 @@ export default function Landing({ onEnter }: Props) {
       <footer className="border-t border-paper3 py-6">
         <div className="max-w-[1100px] mx-auto px-8 flex justify-between items-center">
           <span className="text-[10px] text-dim tracking-[0.1em]">WORLD OF AGENTS · v0.1</span>
-          <span className="text-[10px] text-dim tracking-[0.1em]">RESEARCH MVP</span>
+          <a href="https://github.com/yskew/worldofagents" target="_blank" rel="noopener" className="text-[10px] text-dim tracking-[0.1em] hover:text-peach transition-colors">GITHUB</a>
         </div>
       </footer>
     </div>

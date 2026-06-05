@@ -4,8 +4,6 @@
 
 Every AI agent acting in the world today does so with either no identity at all, or a stolen one. World of Agents is an open platform that lets any agent prove which human owns it, verify its behavioral identity, and act on behalf of its owner with full attribution.
 
-![World of Agents](promo/demo.gif)
-
 ---
 
 ## What it does
@@ -33,29 +31,33 @@ Agent verifies identity → presents key + trajectory → crypto check (bcrypt)
 
 Seven feature categories extracted from agent trajectories:
 
-| Feature | What it captures |
-|---------|-----------------|
-| Tool call histogram | Which tools, how often |
-| Bigram transitions | Sequential tool-call probabilities |
-| Trigram transitions | Three-step sequence patterns |
-| Response length stats | Message verbosity profile |
-| Vocabulary stats | Lexical diversity, token distribution |
-| Timing stats | Inter-action intervals |
-| Structural features | Sequence shape, error rates |
+
+| Feature               | What it captures                      |
+| --------------------- | ------------------------------------- |
+| Tool call histogram   | Which tools, how often                |
+| Bigram transitions    | Sequential tool-call probabilities    |
+| Trigram transitions   | Three-step sequence patterns          |
+| Response length stats | Message verbosity profile             |
+| Vocabulary stats      | Lexical diversity, token distribution |
+| Timing stats          | Inter-action intervals                |
+| Structural features   | Sequence shape, error rates           |
+
 
 Comparison uses a weighted ensemble: **Jensen-Shannon divergence (25%)** + **Cosine similarity (30%)** + **Markov analysis (25%)** + **Statistical comparison (20%)** → single 0.0–1.0 score.
 
 ## Tech stack
 
-| Layer | Technology |
-|-------|-----------|
-| API | FastAPI (Python) |
-| Database | PostgreSQL 17 + pgvector |
-| Auth | Clerk |
-| JWT | RS256 via PyJWT + cryptography |
+
+| Layer    | Technology                               |
+| -------- | ---------------------------------------- |
+| API      | FastAPI (Python)                         |
+| Database | PostgreSQL 17 + pgvector                 |
+| Auth     | Clerk                                    |
+| JWT      | RS256 via PyJWT + cryptography           |
 | Frontend | React + TypeScript + Vite + Tailwind CSS |
-| 3D | Three.js |
-| Deploy | Docker Compose / Railway |
+| 3D       | Three.js                                 |
+| Deploy   | Docker Compose / Railway                 |
+
 
 ## Quick start
 
@@ -82,35 +84,41 @@ docker compose exec api pytest tests/ -v
 
 **Services:**
 
-| Service | URL |
-|---------|-----|
-| Frontend | http://localhost:5173 |
-| API | http://localhost:8000 |
-| API Docs | http://localhost:8000/docs |
-| Mailpit | http://localhost:8025 |
+
+| Service  | URL                                                      |
+| -------- | -------------------------------------------------------- |
+| Frontend | [http://localhost:5173](http://localhost:5173)           |
+| API      | [http://localhost:8000](http://localhost:8000)           |
+| API Docs | [http://localhost:8000/docs](http://localhost:8000/docs) |
+| Mailpit  | [http://localhost:8025](http://localhost:8025)           |
+
 
 ## API endpoints
 
 ### Authenticated (Clerk session)
 
-| Method | Endpoint | Purpose |
-|--------|----------|---------|
-| POST | `/agents/register` | Register agent, get one-time key |
-| GET | `/agents` | List your agents |
-| GET | `/agents/{id}` | Agent details |
-| DELETE | `/agents/{id}` | Revoke agent |
-| POST | `/agents/{id}/refine` | Improve behavioral signature |
-| POST | `/agents/{id}/rotate-key` | Rotate agent key |
+
+| Method | Endpoint                  | Purpose                          |
+| ------ | ------------------------- | -------------------------------- |
+| POST   | `/agents/register`        | Register agent, get one-time key |
+| GET    | `/agents`                 | List your agents                 |
+| GET    | `/agents/{id}`            | Agent details                    |
+| DELETE | `/agents/{id}`            | Revoke agent                     |
+| POST   | `/agents/{id}/refine`     | Improve behavioral signature     |
+| POST   | `/agents/{id}/rotate-key` | Rotate agent key                 |
+
 
 ### Open (no auth required)
 
-| Method | Endpoint | Purpose |
-|--------|----------|---------|
-| POST | `/verify` | Verify agent identity, get JWT |
-| POST | `/compare` | Compare two trajectories |
-| GET | `/agents/{id}/public` | Public profile + stats |
-| GET | `/.well-known/jwks.json` | JWKS for JWT verification |
-| GET | `/health` | Health check |
+
+| Method | Endpoint                 | Purpose                        |
+| ------ | ------------------------ | ------------------------------ |
+| POST   | `/verify`                | Verify agent identity, get JWT |
+| POST   | `/compare`               | Compare two trajectories       |
+| GET    | `/agents/{id}/public`    | Public profile + stats         |
+| GET    | `/.well-known/jwks.json` | JWKS for JWT verification      |
+| GET    | `/health`                | Health check                   |
+
 
 ## Tests
 

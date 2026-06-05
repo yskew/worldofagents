@@ -61,6 +61,10 @@ export default function Shell() {
               <div className="w-1.5 h-1.5 bg-green" style={{ boxShadow: '0 0 6px rgba(125,204,138,0.5)' }} />
               <span className="text-[10px] text-dim tracking-[0.1em]">ONLINE</span>
             </div>
+            <a href="https://github.com/yskew/worldofagents" target="_blank" rel="noopener"
+              className="text-[10px] text-dim tracking-[0.1em] hover:text-peach transition-colors">
+              GITHUB
+            </a>
             <UserButton
               appearance={{
                 elements: {
