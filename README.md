@@ -4,6 +4,8 @@
 
 Every AI agent acting in the world today does so with either no identity at all, or a stolen one. World of Agents is an open platform that lets any agent prove which human owns it, verify its behavioral identity, and act on behalf of its owner with full attribution.
 
+![World of Agents](promo/demo_compressed.gif)
+
 ---
 
 ## What it does
