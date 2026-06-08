@@ -80,6 +80,7 @@ async def verify_agent(
         verdict=comparison["verdict"],
         token=token,
         breakdown=comparison["breakdown"],
+        confidence=comparison.get("confidence"),
     )
 
 
@@ -158,4 +159,5 @@ async def compare_trajectories(body: CompareRequest) -> CompareResponse:
         similarity_score=comparison["overall_score"],
         verdict=comparison["verdict"],
         breakdown=comparison["breakdown"],
+        confidence=comparison.get("confidence"),
     )

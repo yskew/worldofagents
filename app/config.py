@@ -22,6 +22,13 @@ class Settings(BaseSettings):
     # full ones. Set False to restore exact legacy scoring.
     SCORE_NORMALIZATION_V2: bool = True
 
+    # RFC 0006: when True, responses include a calibrated `confidence` (Platt
+    # scaling of the raw score into a probability). Monotonic, so it never changes
+    # the verdict. Default OFF: CALIBRATION_PARAMS were fit on synthetic eval data,
+    # so the probability is only as trustworthy as that data; re-fit on a real
+    # corpus before relying on it or moving thresholds into probability space.
+    SCORE_CALIBRATION: bool = False
+
     # RFC 0004: when True, the V2 aggregator uses data-fit ensemble weights
     # (LEARNED_METRIC_WEIGHTS) instead of the hand-set base weights. Default OFF:
     # the current weights were fit on synthetic eval data and overfit toward tool
@@ -53,3 +60,8 @@ settings = Settings()
 # the V2 aggregator only when USE_LEARNED_WEIGHTS is True. Treated as a versioned
 # artifact, not env-configurable; re-fit and replace when a real corpus exists.
 LEARNED_METRIC_WEIGHTS = {"jsd": 0.4786, "cosine": 0.1562, "markov": 0.3523, "stats": 0.0129}
+
+# RFC 0006: Platt scaling params fit by scripts/fit_calibration.py on the seeded
+# eval dataset under the V2 encoding. P(same) = sigmoid(a * raw_score + b).
+# Re-fit and replace when a real corpus exists.
+CALIBRATION_PARAMS = {"a": 21.4754, "b": -6.8025}

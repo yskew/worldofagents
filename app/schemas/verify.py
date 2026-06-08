@@ -20,6 +20,7 @@ class VerifyResponse(BaseModel):
     verdict: Literal["pass", "fail", "warning"]
     token: str | None = None
     breakdown: dict | None = None
+    confidence: float | None = None  # calibrated probability (RFC 0006), when enabled
 
 
 class CompareRequest(BaseModel):
@@ -31,6 +32,7 @@ class CompareResponse(BaseModel):
     similarity_score: float
     verdict: Literal["pass", "fail", "warning"]
     breakdown: dict
+    confidence: float | None = None  # calibrated probability (RFC 0006), when enabled
 
 
 class SimilarRequest(BaseModel):

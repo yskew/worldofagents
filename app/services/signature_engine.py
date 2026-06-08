@@ -7,7 +7,7 @@ from collections import Counter, defaultdict
 import numpy as np
 from scipy.spatial.distance import cosine, jensenshannon
 
-from app.config import LEARNED_METRIC_WEIGHTS, settings
+from app.config import CALIBRATION_PARAMS, LEARNED_METRIC_WEIGHTS, settings
 from app.schemas.agent import TrajectoryStep
 
 VECTOR_DIM = settings.SIGNATURE_VECTOR_DIM
@@ -216,11 +216,22 @@ def compare_signatures(
     else:
         verdict = "warning"
 
-    return {
+    result = {
         "overall_score": round(overall, 4),
         "breakdown": breakdown,
         "verdict": verdict,
     }
+    if settings.SCORE_CALIBRATION:
+        result["confidence"] = round(calibrate_confidence(overall), 4)
+    return result
+
+
+def calibrate_confidence(raw_score: float) -> float:
+    """Platt scaling of the raw score into a probability (RFC 0006). Monotonic in
+    raw_score, so it never reorders results or changes the verdict."""
+    a = CALIBRATION_PARAMS["a"]
+    b = CALIBRATION_PARAMS["b"]
+    return 1.0 / (1.0 + math.exp(-(a * raw_score + b)))
 
 
 def _aggregate_v1(raw: dict) -> tuple[float, dict]:
