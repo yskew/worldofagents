@@ -172,14 +172,36 @@ measurable drop in shape-collision false similarity.
 - Optional dimension increase (512/768) once a real ANN workload justifies the
   index cost — a clean follow-on since the band layout is parameterized.
 
-## 8. Implementation checklist (only after this RFC is accepted)
+## 8. Implementation status (branch `raghul-branch`)
 
-- [ ] `VECTOR_ENCODING_V2` flag in `app/config.py` (default `False`).
-- [ ] `agents.signature_version` column + migration (nullable smallint).
-- [ ] `features_to_vector_v2` (hashed bands, bounded transforms, blake2b hash).
-- [ ] `features_to_vector` dispatches on flag; V1 path untouched.
-- [ ] `/verify` + `/compare`: recompute stored vector from JSONB for
-      self-consistency.
-- [ ] `scripts/reembed.py` backfill (idempotent, logged).
-- [ ] Tests per §5; eval comparison per §6 recorded in the PR.
-- [ ] Flip default to `True` + run backfill — deferred follow-up after validation.
+- [x] `VECTOR_ENCODING_V2` flag in `app/config.py` (default `False`).
+- [x] `agents.signature_version` column + migration `b2c3d4e5f6a7` (nullable smallint).
+- [x] `_features_to_vector_v2` (hashed bands, bounded `_squash`/`tanh` transforms,
+      blake2b stable hash, signed hashing).
+- [x] `features_to_vector` dispatches on flag; `_features_to_vector_v1` byte-identical to original.
+- [x] `/verify` recomputes the stored vector from JSONB for self-consistency;
+      `/compare` already extracts both sides live.
+- [x] `scripts/reembed.py` backfill (idempotent, logged, stamps `signature_version`).
+- [x] Tests per §5 (`tests/test_vector_encoding.py`); live demo per §6.
+- [ ] **Flip default to `True` + run backfill** — deferred follow-up after a
+      statistically powered eval.
+
+### Measured results (dev harness + live local stack)
+
+Full suite: **147 passed** (default flags), engine subset **50 passed**, ruff clean.
+
+| Check | V1 | V2 | Outcome |
+|-------|----|----|---------|
+| Disjoint-tools, same-shape cosine (the bug) | **0.888** | **0.282** | False positive eliminated |
+| Identical trajectory (overall) | 1.0 | 1.0 | No false negative |
+| Dims reachable | ~184 | 236 (hashed bands fill 0–223) | Dead-slot gaps removed |
+| Determinism across processes | n/a | identical | blake2b, not salted `hash()` |
+
+Backward-compat proven live: an agent registered under V1 (stored V1 vector) was
+verified successfully **after** flipping to V2 (score 0.80→0.72, still PASS)
+because `/verify` recomputes from JSONB; `reembed.py` then backfilled all rows to
+`signature_version=2`.
+
+> The shape-collision and dimension numbers are from the dev harness/local
+> stack, not a powered eval. Before flipping the default, run the labeled-eval
+> ROC-AUC/EER comparison (§6) on the cosine sub-score specifically.
