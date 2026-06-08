@@ -20,6 +20,14 @@ class Settings(BaseSettings):
     # voting a neutral 0.5. Default off preserves the legacy scoring exactly.
     SCORE_NORMALIZATION_V2: bool = False
 
+    # RFC 0002: when True, features_to_vector uses the hashed-band encoding
+    # (stable per-tool positions, bounded transforms, full 256-dim use) instead
+    # of the legacy sort-by-magnitude layout. Default off preserves the legacy
+    # vector exactly. Flipping this requires re-embedding stored vectors
+    # (scripts/reembed.py); /verify and /compare recompute from the JSONB
+    # signature at call time, so live verification stays correct either way.
+    VECTOR_ENCODING_V2: bool = False
+
     @property
     def async_database_url(self) -> str:
         url = self.DATABASE_URL

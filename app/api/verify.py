@@ -31,7 +31,11 @@ async def verify_agent(
     new_features = extract_features(body.trajectory)
     new_vector = features_to_vector(new_features)
     stored_sig = agent.signature or {}
-    stored_vec = list(agent.signature_vector) if agent.signature_vector is not None else features_to_vector(stored_sig)
+    # Recompute the stored vector from the signature JSONB (the encoding-independent
+    # source of truth) rather than trusting a possibly stale persisted vector. This
+    # guarantees both sides use the active encoding (RFC 0002) and is identical to
+    # the persisted value under the legacy encoding.
+    stored_vec = features_to_vector(stored_sig)
 
     comparison = compare_signatures(stored_sig, stored_vec, new_features, new_vector)
     passed = comparison["verdict"] == "pass"

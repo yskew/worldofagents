@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import math
 from collections import Counter, defaultdict
 
@@ -29,6 +30,15 @@ def extract_features(trajectory: list[TrajectoryStep]) -> dict:
 
 
 def features_to_vector(features: dict) -> list[float]:
+    """Encode a feature dict into the fixed-dim signature vector. Dispatches on
+    the VECTOR_ENCODING_V2 flag; the vector is a derived cache of the feature
+    dict, so it can always be recomputed from the stored signature JSONB."""
+    if settings.VECTOR_ENCODING_V2:
+        return _features_to_vector_v2(features)
+    return _features_to_vector_v1(features)
+
+
+def _features_to_vector_v1(features: dict) -> list[float]:
     vec = np.zeros(VECTOR_DIM, dtype=np.float64)
 
     histogram = features.get("tool_call_histogram", {})
@@ -60,6 +70,101 @@ def features_to_vector(features: dict) -> list[float]:
     vec[231] = sf.get("unique_action_types", 0) / 20.0
     vec[232] = sf.get("tool_call_ratio", 0)
     vec[233] = sf.get("error_retry_ratio", 0)
+
+    norm = np.linalg.norm(vec)
+    if norm > 0:
+        vec = vec / norm
+
+    return vec.tolist()
+
+
+# --- RFC 0002: hashed-band encoding -----------------------------------------
+#
+# Each band occupies a contiguous slice of the 256-dim vector. Categorical
+# features (tools, transitions) are placed by a *stable* hash of their name, so
+# the same tool maps to the same dimension for every agent -> cosine compares
+# like-for-like instead of comparing distribution shapes. Scalar features use
+# bounded transforms (squash / tanh) instead of magic divisors so no value can
+# saturate or vanish off-scale.
+_V2_BANDS = {
+    "histogram": (0, 96),
+    "bigram": (96, 80),
+    "trigram": (176, 48),
+    # scalar bands (start indices); each documented inline below
+    "rlen": 224,   # 224..227
+    "vocab": 232,  # 232..234
+    "timing": 240,  # 240..242
+    "struct": 248,  # 248..251
+}
+
+
+def _stable_hash(s: str) -> int:
+    """Process-independent hash. NOT builtin hash() (salted per process), which
+    would make persisted vectors irreproducible across restarts."""
+    return int.from_bytes(hashlib.blake2b(s.encode("utf-8"), digest_size=8).digest(), "big")
+
+
+def _hashed_bucket(key: str, size: int) -> int:
+    return _stable_hash(key) % size
+
+
+def _hashed_sign(key: str) -> float:
+    # Independent bit from a distinct hash input; signed hashing makes random
+    # collisions cancel in expectation rather than always inflate a bucket.
+    return 1.0 if (_stable_hash(key + "\x00sign") & 1) else -1.0
+
+
+def _squash(x: float, k: float) -> float:
+    """Monotonic map of a non-negative quantity into [0, 1) with knee at k."""
+    if x <= 0:
+        return 0.0
+    return x / (x + k)
+
+
+def _features_to_vector_v2(features: dict) -> list[float]:
+    vec = np.zeros(VECTOR_DIM, dtype=np.float64)
+
+    h_start, h_size = _V2_BANDS["histogram"]
+    for name, val in features.get("tool_call_histogram", {}).items():
+        vec[h_start + _hashed_bucket(name, h_size)] += _hashed_sign(name) * val
+
+    b_start, b_size = _V2_BANDS["bigram"]
+    for src, dsts in features.get("transition_matrix", {}).items():
+        for dst, prob in dsts.items():
+            key = f"{src}>{dst}"
+            vec[b_start + _hashed_bucket(key, b_size)] += _hashed_sign(key) * prob
+
+    t_start, t_size = _V2_BANDS["trigram"]
+    for src, dsts in features.get("trigram_transitions", {}).items():
+        for dst, prob in dsts.items():
+            key = f"{src}>{dst}"
+            vec[t_start + _hashed_bucket(key, t_size)] += _hashed_sign(key) * prob
+
+    r = _V2_BANDS["rlen"]
+    rstats = features.get("response_length_stats", {})
+    vec[r + 0] = _squash(rstats.get("mean", 0), 200.0)
+    vec[r + 1] = _squash(rstats.get("variance", 0), 10000.0)
+    vec[r + 2] = math.tanh(rstats.get("skewness", 0) / 2.0)  # skew may be negative
+    vec[r + 3] = _squash(rstats.get("count", 0), 10.0)
+
+    v = _V2_BANDS["vocab"]
+    vstats = features.get("vocabulary_stats", {})
+    vec[v + 0] = float(vstats.get("type_token_ratio", 0))  # already in [0, 1]
+    vec[v + 1] = _squash(vstats.get("unique_tokens", 0), 100.0)
+    vec[v + 2] = _squash(vstats.get("total_tokens", 0), 200.0)
+
+    tm = _V2_BANDS["timing"]
+    tstats = features.get("timing_stats") or {}
+    vec[tm + 0] = _squash(tstats.get("mean_interval_s", 0), 30.0)
+    vec[tm + 1] = _squash(tstats.get("std_interval_s", 0), 30.0)
+    vec[tm + 2] = _squash(tstats.get("max_interval_s", 0), 120.0)
+
+    s = _V2_BANDS["struct"]
+    sf = features.get("structural_features", {})
+    vec[s + 0] = _squash(sf.get("sequence_length", 0), 20.0)
+    vec[s + 1] = _squash(sf.get("unique_action_types", 0), 10.0)
+    vec[s + 2] = float(sf.get("tool_call_ratio", 0))   # already in [0, 1]
+    vec[s + 3] = float(sf.get("error_retry_ratio", 0))  # already in [0, 1]
 
     norm = np.linalg.norm(vec)
     if norm > 0:

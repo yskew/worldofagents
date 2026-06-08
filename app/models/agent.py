@@ -5,7 +5,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING
 
 from pgvector.sqlalchemy import Vector
-from sqlalchemy import DateTime, ForeignKey, String, Text, func
+from sqlalchemy import DateTime, ForeignKey, SmallInteger, String, Text, func
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -29,6 +29,9 @@ class Agent(Base):
     key_salt: Mapped[str] = mapped_column(String(255), nullable=False)
     signature: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     signature_vector = mapped_column(Vector(256), nullable=True)
+    # RFC 0002: which encoding produced signature_vector. NULL/1 = legacy layout,
+    # 2 = hashed-band encoding. Used by the re-embedding backfill to find stale rows.
+    signature_version: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="active")
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()

@@ -4,10 +4,15 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.agent_keys import create_agent_credentials
+from app.config import settings
 from app.models.agent import Agent
 from app.models.human import Human
 from app.schemas.agent import AgentRegisterRequest, AgentRefineRequest
 from app.services.signature_engine import extract_features, features_to_vector, merge_features
+
+
+def _current_vector_version() -> int:
+    return 2 if settings.VECTOR_ENCODING_V2 else 1
 
 
 async def register_agent(
@@ -25,6 +30,7 @@ async def register_agent(
         key_salt=key_salt,
         signature=signature,
         signature_vector=sig_vector,
+        signature_version=_current_vector_version(),
         status="active",
     )
     db.add(agent)
@@ -68,6 +74,7 @@ async def refine_agent(
     merged = merge_features(existing, new_features)
     agent.signature = merged
     agent.signature_vector = features_to_vector(merged)
+    agent.signature_version = _current_vector_version()
     await db.commit()
     await db.refresh(agent)
     return agent
