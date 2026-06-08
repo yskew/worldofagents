@@ -31,3 +31,23 @@ class CompareResponse(BaseModel):
     similarity_score: float
     verdict: Literal["pass", "fail", "warning"]
     breakdown: dict
+
+
+class SimilarRequest(BaseModel):
+    trajectory: list[TrajectoryStep] = Field(..., min_length=1)
+    limit: int = Field(5, ge=1, le=50)
+
+
+class SimilarMatch(BaseModel):
+    agent_id: uuid.UUID
+    name: str
+    owner_display_name: str
+    score: float            # full ensemble overall_score after re-rank
+    vector_similarity: float  # raw pgvector cosine similarity (ANN signal)
+
+
+class SimilarResponse(BaseModel):
+    results: list[SimilarMatch]
+    # agents excluded because their stored vector predates the active encoding
+    # (run scripts/reembed.py to include them)
+    stale_excluded: int = 0

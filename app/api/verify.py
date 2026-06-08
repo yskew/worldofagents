@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, Request
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.agent_keys import verify_agent_credentials
@@ -7,8 +7,18 @@ from app.auth.jwt_issuer import get_jwt_issuer
 from app.config import settings
 from app.database import get_db
 from app.models.agent import Agent
+from app.models.human import Human
 from app.models.verification_log import VerificationLog
-from app.schemas.verify import CompareRequest, CompareResponse, VerifyRequest, VerifyResponse
+from app.schemas.verify import (
+    CompareRequest,
+    CompareResponse,
+    SimilarMatch,
+    SimilarRequest,
+    SimilarResponse,
+    VerifyRequest,
+    VerifyResponse,
+)
+from app.services.agent_service import _current_vector_version
 from app.services.signature_engine import compare_signatures, extract_features, features_to_vector
 
 router = APIRouter(tags=["verify"])
@@ -71,6 +81,68 @@ async def verify_agent(
         token=token,
         breakdown=comparison["breakdown"],
     )
+
+
+@router.post("/similar")
+async def find_similar_agents(
+    body: SimilarRequest,
+    db: AsyncSession = Depends(get_db),
+) -> SimilarResponse:
+    """Find active agents whose behavioral signature most resembles the supplied
+    trajectory. Uses a pgvector ANN scan (cosine) for fast candidate retrieval,
+    then re-ranks candidates with the full ensemble for quality. Public, no auth.
+
+    Only agents whose stored vector matches the active encoding are searched;
+    others are reported in stale_excluded (recompute with scripts/reembed.py)."""
+    query_features = extract_features(body.trajectory)
+    query_vector = features_to_vector(query_features)
+    active_version = _current_vector_version()
+
+    # Candidate retrieval: pull a few extra so the ensemble re-rank has room.
+    pool = min(body.limit * 4, 50)
+    dist = Agent.signature_vector.cosine_distance(query_vector).label("dist")
+    rows = (
+        await db.execute(
+            select(Agent, Human.display_name, dist)
+            .join(Human, Agent.human_id == Human.id)
+            .where(
+                Agent.status == "active",
+                Agent.signature_vector.isnot(None),
+                Agent.signature_version == active_version,
+            )
+            .order_by(dist)
+            .limit(pool)
+        )
+    ).all()
+
+    stale_excluded = (
+        await db.execute(
+            select(func.count(Agent.id)).where(
+                Agent.status == "active",
+                Agent.signature_vector.isnot(None),
+                Agent.signature_version.is_distinct_from(active_version),
+            )
+        )
+    ).scalar() or 0
+
+    matches = []
+    for agent, owner_name, d in rows:
+        cand_vector = features_to_vector(agent.signature or {})
+        comparison = compare_signatures(
+            query_features, query_vector, agent.signature or {}, cand_vector
+        )
+        matches.append(
+            SimilarMatch(
+                agent_id=agent.id,
+                name=agent.name,
+                owner_display_name=owner_name,
+                score=comparison["overall_score"],
+                vector_similarity=round(1.0 - float(d), 4),
+            )
+        )
+
+    matches.sort(key=lambda m: m.score, reverse=True)
+    return SimilarResponse(results=matches[: body.limit], stale_excluded=int(stale_excluded))
 
 
 @router.post("/compare")
