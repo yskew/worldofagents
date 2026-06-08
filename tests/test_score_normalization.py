@@ -80,14 +80,19 @@ def _sigs():
     return out
 
 
+# This suite isolates the scoring change, so it pins the vector encoding to V1
+# throughout — otherwise the ambient VECTOR_ENCODING_V2 default would shift the
+# cosine sub-score and invalidate the legacy snapshot.
 @pytest.fixture
 def v1(monkeypatch):
     monkeypatch.setattr(settings, "SCORE_NORMALIZATION_V2", False)
+    monkeypatch.setattr(settings, "VECTOR_ENCODING_V2", False)
 
 
 @pytest.fixture
 def v2(monkeypatch):
     monkeypatch.setattr(settings, "SCORE_NORMALIZATION_V2", True)
+    monkeypatch.setattr(settings, "VECTOR_ENCODING_V2", False)
 
 
 # --- Characterization: freeze legacy (V1) scores -----------------------------
@@ -172,6 +177,7 @@ class TestV2Abstention:
 class TestInvariants:
     def _set(self, monkeypatch, flag):
         monkeypatch.setattr(settings, "SCORE_NORMALIZATION_V2", flag)
+        monkeypatch.setattr(settings, "VECTOR_ENCODING_V2", False)
 
     def test_score_in_unit_range(self, monkeypatch, flag):
         self._set(monkeypatch, flag)
@@ -208,6 +214,7 @@ class TestImpersonationStillFails:
 
     def _malicious_vs_coding(self, flag, monkeypatch):
         monkeypatch.setattr(settings, "SCORE_NORMALIZATION_V2", flag)
+        monkeypatch.setattr(settings, "VECTOR_ENCODING_V2", False)
         coding = extract_features(ARCHETYPES["code-assistant"])
         coding_v = features_to_vector(coding)
         malicious = extract_features(_traj([

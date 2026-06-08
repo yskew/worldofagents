@@ -8,11 +8,11 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app.config import settings
-from app.models import Base
 from app.models.human import Human
 from app.models.agent import Agent
 from app.models.verification_log import VerificationLog
 from app.auth.agent_keys import create_agent_credentials
+from app.services.agent_service import _current_vector_version
 from app.services.signature_engine import extract_features, features_to_vector
 from app.schemas.agent import TrajectoryStep
 
@@ -129,6 +129,7 @@ async def seed():
                 key_salt=key_salt,
                 signature=signature,
                 signature_vector=sig_vector,
+                signature_version=_current_vector_version(),
                 status="active",
             )
             db.add(agent)
@@ -164,7 +165,7 @@ async def seed():
     print("\n--- Seed complete ---")
     print(f"  {len(AGENTS)} agents created ({len(AGENTS)-1} active, 1 revoked)")
     print(f"  {sum(VERIFICATION_COUNTS)} verification log entries")
-    print(f"\n  Demo credentials (for /verify):")
+    print("\n  Demo credentials (for /verify):")
     for agent, key in created:
         if agent.status == "active":
             print(f"    {agent.name}: id={agent.id}  key={key}")
