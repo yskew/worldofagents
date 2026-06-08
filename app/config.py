@@ -15,6 +15,11 @@ class Settings(BaseSettings):
     VERIFICATION_FAIL_THRESHOLD: float = 0.4
     SIGNATURE_VECTOR_DIM: int = 256
 
+    # RFC 0001: when True, unmeasurable ensemble metrics abstain and their weight
+    # is redistributed over the metrics that did produce a value, instead of
+    # voting a neutral 0.5. Default off preserves the legacy scoring exactly.
+    SCORE_NORMALIZATION_V2: bool = False
+
     @property
     def async_database_url(self) -> str:
         url = self.DATABASE_URL

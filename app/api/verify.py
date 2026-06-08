@@ -4,6 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.agent_keys import verify_agent_credentials
 from app.auth.jwt_issuer import get_jwt_issuer
+from app.config import settings
 from app.database import get_db
 from app.models.agent import Agent
 from app.models.verification_log import VerificationLog
@@ -40,6 +41,7 @@ async def verify_agent(
         agent_id=agent.id,
         similarity_score=comparison["overall_score"],
         passed=passed,
+        score_version=2 if settings.SCORE_NORMALIZATION_V2 else 1,
         ip_address=client_ip,
     )
     db.add(log)

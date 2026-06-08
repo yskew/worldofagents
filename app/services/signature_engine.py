@@ -68,18 +68,30 @@ def features_to_vector(features: dict) -> list[float]:
     return vec.tolist()
 
 
+# Base ensemble weights. Sum to 1.0; the single source of truth for both regimes.
+_METRIC_WEIGHTS = {"jsd": 0.25, "cosine": 0.30, "markov": 0.25, "stats": 0.20}
+_NEUTRAL_SCORE = 0.5  # legacy (V1) value injected for unmeasurable metrics
+
+
 def compare_signatures(
     sig_a: dict,
     vec_a: list[float],
     sig_b: dict,
     vec_b: list[float],
 ) -> dict:
-    jsd = _jsd_score(sig_a, sig_b)
-    cos = _cosine_score(vec_a, vec_b)
-    markov = _markov_score(sig_a, sig_b)
-    stats = _stats_score(sig_a, sig_b)
+    # Raw metric values. jsd/cosine are always computable; markov/stats may
+    # abstain (return None) when the trajectory lacks the structure to measure.
+    raw = {
+        "jsd": _jsd_score(sig_a, sig_b),
+        "cosine": _cosine_score(vec_a, vec_b),
+        "markov": _markov_score(sig_a, sig_b),
+        "stats": _stats_score(sig_a, sig_b),
+    }
 
-    overall = 0.25 * jsd + 0.30 * cos + 0.25 * markov + 0.20 * stats
+    if settings.SCORE_NORMALIZATION_V2:
+        overall, breakdown = _aggregate_v2(raw)
+    else:
+        overall, breakdown = _aggregate_v1(raw)
 
     pass_threshold = settings.VERIFICATION_PASS_THRESHOLD
     fail_threshold = settings.VERIFICATION_FAIL_THRESHOLD
@@ -93,14 +105,51 @@ def compare_signatures(
 
     return {
         "overall_score": round(overall, 4),
-        "breakdown": {
-            "jsd_score": round(jsd, 4),
-            "cosine_score": round(cos, 4),
-            "markov_score": round(markov, 4),
-            "stats_score": round(stats, 4),
-        },
+        "breakdown": breakdown,
         "verdict": verdict,
     }
+
+
+def _aggregate_v1(raw: dict) -> tuple[float, dict]:
+    """Legacy behavior: unmeasurable metrics vote a neutral 0.5; fixed weights."""
+    scores = {k: (_NEUTRAL_SCORE if v is None else v) for k, v in raw.items()}
+    overall = sum(_METRIC_WEIGHTS[k] * scores[k] for k in _METRIC_WEIGHTS)
+    breakdown = {
+        "jsd_score": round(scores["jsd"], 4),
+        "cosine_score": round(scores["cosine"], 4),
+        "markov_score": round(scores["markov"], 4),
+        "stats_score": round(scores["stats"], 4),
+    }
+    return overall, breakdown
+
+
+def _aggregate_v2(raw: dict) -> tuple[float, dict]:
+    """RFC 0001: abstaining metrics are excluded and their weight redistributed
+    proportionally over the metrics that produced a value."""
+    applicable = {k: v for k, v in raw.items() if v is not None}
+    total_w = sum(_METRIC_WEIGHTS[k] for k in applicable)
+
+    if total_w > 0:
+        overall = sum(_METRIC_WEIGHTS[k] * applicable[k] for k in applicable) / total_w
+        effective = {k: (_METRIC_WEIGHTS[k] / total_w if k in applicable else 0.0)
+                     for k in _METRIC_WEIGHTS}
+    else:
+        # No metric was measurable at all; nothing to assert similarity from.
+        overall = 0.0
+        effective = {k: 0.0 for k in _METRIC_WEIGHTS}
+
+    breakdown = {
+        "jsd_score": _round_or_none(raw["jsd"]),
+        "cosine_score": _round_or_none(raw["cosine"]),
+        "markov_score": _round_or_none(raw["markov"]),
+        "stats_score": _round_or_none(raw["stats"]),
+        "effective_weights": {k: round(w, 4) for k, w in effective.items()},
+    }
+    return overall, breakdown
+
+
+def _round_or_none(value: float | None) -> float | None:
+    return None if value is None else round(value, 4)
 
 
 def merge_features(existing: dict, new: dict, existing_weight: float = 0.7) -> dict:
@@ -280,15 +329,17 @@ def _cosine_score(vec_a: list[float], vec_b: list[float]) -> float:
     return 1.0 - dist
 
 
-def _markov_score(sig_a: dict, sig_b: dict) -> float:
+def _markov_score(sig_a: dict, sig_b: dict) -> float | None:
+    """Per-state JSD over transition matrices. Returns None (abstain) when there
+    is no transition structure to compare (e.g. trajectories with < 2 steps)."""
     model = sig_a.get("transition_matrix", {})
     observed = sig_b.get("transition_matrix", {})
     if not model or not observed:
-        return 0.5
+        return None
 
     all_src = set(model) | set(observed)
     if not all_src:
-        return 0.5
+        return None
 
     match_score = 0.0
     total_weight = 0.0
@@ -321,11 +372,13 @@ def _markov_score(sig_a: dict, sig_b: dict) -> float:
         total_weight += 1.0
 
     if total_weight == 0:
-        return 0.5
+        return None
     return match_score / total_weight
 
 
-def _stats_score(sig_a: dict, sig_b: dict) -> float:
+def _stats_score(sig_a: dict, sig_b: dict) -> float | None:
+    """Compares response-length and vocabulary profiles. Returns None (abstain)
+    when neither is computable (e.g. tool-only trajectories with no content)."""
     scores = []
     rls_a = sig_a.get("response_length_stats", {})
     rls_b = sig_b.get("response_length_stats", {})
@@ -341,7 +394,7 @@ def _stats_score(sig_a: dict, sig_b: dict) -> float:
         scores.append(1.0 - min(ttr_diff, 1.0))
 
     if not scores:
-        return 0.5
+        return None
     return sum(scores) / len(scores)
 
 
