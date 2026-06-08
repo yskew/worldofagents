@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import logging
 import uuid
 from datetime import datetime, timedelta, timezone
 
@@ -11,11 +12,15 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 
 from app.config import settings
 
+logger = logging.getLogger(__name__)
+
 
 class JWTIssuer:
     def __init__(self, private_key_pem: str | None = None, public_key_pem: str | None = None):
         loaded = False
         if private_key_pem and public_key_pem:
+            # Keys were provided: they must load. Silently regenerating on a parse
+            # error would invalidate every previously issued token (RFC 0007).
             try:
                 priv = private_key_pem.replace("\\n", "\n")
                 pub = public_key_pem.replace("\\n", "\n")
@@ -24,9 +29,24 @@ class JWTIssuer:
                 )
                 self._public_key = serialization.load_pem_public_key(pub.encode())
                 loaded = True
-            except Exception:
-                pass
+            except Exception as e:
+                raise RuntimeError(
+                    "Failed to load RSA_PRIVATE_KEY_PEM/RSA_PUBLIC_KEY_PEM. "
+                    "Fix the configured keys; refusing to silently regenerate."
+                ) from e
         if not loaded:
+            # No keys configured. In production this is fatal: an ephemeral key
+            # regenerated each restart silently invalidates all issued tokens and
+            # breaks JWKS verification. In development, generate a throwaway pair.
+            if settings.is_production:
+                raise RuntimeError(
+                    "RSA_PRIVATE_KEY_PEM and RSA_PUBLIC_KEY_PEM are required in "
+                    "production. Generate them with scripts/generate_rsa_keys.py."
+                )
+            logger.warning(
+                "No RSA keys configured; generating an EPHEMERAL keypair "
+                "(development only). Tokens will not survive a restart."
+            )
             self._private_key = rsa.generate_private_key(
                 public_exponent=65537, key_size=2048
             )

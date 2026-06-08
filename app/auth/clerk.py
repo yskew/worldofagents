@@ -42,6 +42,10 @@ class ClerkClaims:
 
 
 def _is_dev_mode() -> bool:
+    # The demo-user bypass must never be reachable in production, regardless of
+    # how Clerk is configured (RFC 0007).
+    if settings.is_production:
+        return False
     return not settings.CLERK_SECRET_KEY or settings.CLERK_SECRET_KEY.startswith("sk_test_xxx")
 
 
@@ -61,7 +65,15 @@ def _decode_clerk_token(token: str) -> ClerkClaims:
         except jwt.PyJWTError as e:
             raise HTTPException(status_code=401, detail=f"Invalid token: {e}")
     else:
-        # dev/test: no JWKS available, decode without signature verification
+        # No JWKS available. Decoding without signature verification is only
+        # acceptable in development; in production it would accept forged tokens
+        # (RFC 0007).
+        if settings.is_production:
+            raise HTTPException(
+                status_code=401,
+                detail="Token verification unavailable: CLERK_JWKS_URL not configured",
+            )
+        # dev/test: decode without signature verification
         try:
             payload = jwt.decode(
                 token,

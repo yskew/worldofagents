@@ -9,6 +9,7 @@ from app.database import get_db
 from app.models.agent import Agent
 from app.models.human import Human
 from app.models.verification_log import VerificationLog
+from app.ratelimit import rate_limit
 from app.schemas.verify import (
     CompareRequest,
     CompareResponse,
@@ -24,7 +25,7 @@ from app.services.signature_engine import compare_signatures, extract_features, 
 router = APIRouter(tags=["verify"])
 
 
-@router.post("/verify")
+@router.post("/verify", dependencies=[Depends(rate_limit)])
 async def verify_agent(
     body: VerifyRequest,
     request: Request,
@@ -84,7 +85,7 @@ async def verify_agent(
     )
 
 
-@router.post("/similar")
+@router.post("/similar", dependencies=[Depends(rate_limit)])
 async def find_similar_agents(
     body: SimilarRequest,
     db: AsyncSession = Depends(get_db),
@@ -146,7 +147,7 @@ async def find_similar_agents(
     return SimilarResponse(results=matches[: body.limit], stale_excluded=int(stale_excluded))
 
 
-@router.post("/compare")
+@router.post("/compare", dependencies=[Depends(rate_limit)])
 async def compare_trajectories(body: CompareRequest) -> CompareResponse:
     sig_a = extract_features(body.trajectory_a)
     vec_a = features_to_vector(sig_a)

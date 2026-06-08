@@ -4,6 +4,10 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
+    # "development" enables local conveniences (ephemeral JWT keys, demo-user
+    # auth bypass). "production" disables them and fails loud on misconfig.
+    ENVIRONMENT: str = "development"
+
     DATABASE_URL: str = "postgresql+asyncpg://agentverify:devpassword@postgres:5432/agentverify"
     CLERK_SECRET_KEY: str = ""
     CLERK_JWKS_URL: str = ""
@@ -14,6 +18,13 @@ class Settings(BaseSettings):
     VERIFICATION_PASS_THRESHOLD: float = 0.7
     VERIFICATION_FAIL_THRESHOLD: float = 0.4
     SIGNATURE_VECTOR_DIM: int = 256
+
+    # Hardening (RFC 0007). CORS: comma-separated allowed origins; "*" disables
+    # credentialed CORS (spec-compliant). Rate limit: per-IP requests/min on the
+    # open scoring endpoints (in-memory; use a shared store for multi-instance).
+    ALLOWED_ORIGINS: str = "http://localhost:5173,http://localhost:8000"
+    RATE_LIMIT_ENABLED: bool = True
+    RATE_LIMIT_PER_MINUTE: int = 60
 
     # RFC 0001: when True, unmeasurable ensemble metrics abstain and their weight
     # is redistributed over the metrics that did produce a value, instead of
@@ -44,6 +55,14 @@ class Settings(BaseSettings):
     # JSONB signature at call time, so live verification stays correct either way.
     # Set False to restore the legacy vector exactly.
     VECTOR_ENCODING_V2: bool = True
+
+    @property
+    def allowed_origins_list(self) -> list[str]:
+        return [o.strip() for o in self.ALLOWED_ORIGINS.split(",") if o.strip()]
+
+    @property
+    def is_production(self) -> bool:
+        return self.ENVIRONMENT.lower() == "production"
 
     @property
     def async_database_url(self) -> str:
