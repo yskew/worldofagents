@@ -7,7 +7,7 @@ from collections import Counter, defaultdict
 import numpy as np
 from scipy.spatial.distance import cosine, jensenshannon
 
-from app.config import settings
+from app.config import LEARNED_METRIC_WEIGHTS, settings
 from app.schemas.agent import TrajectoryStep
 
 VECTOR_DIM = settings.SIGNATURE_VECTOR_DIM
@@ -178,6 +178,14 @@ _METRIC_WEIGHTS = {"jsd": 0.25, "cosine": 0.30, "markov": 0.25, "stats": 0.20}
 _NEUTRAL_SCORE = 0.5  # legacy (V1) value injected for unmeasurable metrics
 
 
+def _base_weights() -> dict:
+    """Weights for the V2 aggregator: data-fit (RFC 0004) when enabled, else the
+    hand-set base. The legacy V1 aggregator always uses _METRIC_WEIGHTS."""
+    if settings.USE_LEARNED_WEIGHTS:
+        return LEARNED_METRIC_WEIGHTS
+    return _METRIC_WEIGHTS
+
+
 def compare_signatures(
     sig_a: dict,
     vec_a: list[float],
@@ -230,14 +238,16 @@ def _aggregate_v1(raw: dict) -> tuple[float, dict]:
 
 def _aggregate_v2(raw: dict) -> tuple[float, dict]:
     """RFC 0001: abstaining metrics are excluded and their weight redistributed
-    proportionally over the metrics that produced a value."""
+    proportionally over the metrics that produced a value. Base weights are the
+    hand-set defaults, or data-fit weights when USE_LEARNED_WEIGHTS (RFC 0004)."""
+    weights = _base_weights()
     applicable = {k: v for k, v in raw.items() if v is not None}
-    total_w = sum(_METRIC_WEIGHTS[k] for k in applicable)
+    total_w = sum(weights[k] for k in applicable)
 
     if total_w > 0:
-        overall = sum(_METRIC_WEIGHTS[k] * applicable[k] for k in applicable) / total_w
-        effective = {k: (_METRIC_WEIGHTS[k] / total_w if k in applicable else 0.0)
-                     for k in _METRIC_WEIGHTS}
+        overall = sum(weights[k] * applicable[k] for k in applicable) / total_w
+        effective = {k: (weights[k] / total_w if k in applicable else 0.0)
+                     for k in weights}
     else:
         # No metric was measurable at all; nothing to assert similarity from.
         overall = 0.0

@@ -22,6 +22,13 @@ class Settings(BaseSettings):
     # full ones. Set False to restore exact legacy scoring.
     SCORE_NORMALIZATION_V2: bool = True
 
+    # RFC 0004: when True, the V2 aggregator uses data-fit ensemble weights
+    # (LEARNED_METRIC_WEIGHTS) instead of the hand-set base weights. Default OFF:
+    # the current weights were fit on synthetic eval data and overfit toward tool
+    # identity (jsd/markov), down-weighting cosine/stats for negligible gain on a
+    # saturated subset. Flip only after fitting on a real labeled corpus.
+    USE_LEARNED_WEIGHTS: bool = False
+
     # RFC 0002: when True, features_to_vector uses the hashed-band encoding
     # (stable per-tool positions, bounded transforms, full 256-dim use) instead
     # of the legacy sort-by-magnitude layout. Enabled by default after the RFC
@@ -40,3 +47,9 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
+
+# RFC 0004: ensemble weights fit by scripts/fit_weights.py (L2-regularized
+# logistic regression) on the seeded eval dataset under the V2 encoding. Used by
+# the V2 aggregator only when USE_LEARNED_WEIGHTS is True. Treated as a versioned
+# artifact, not env-configurable; re-fit and replace when a real corpus exists.
+LEARNED_METRIC_WEIGHTS = {"jsd": 0.4786, "cosine": 0.1562, "markov": 0.3523, "stats": 0.0129}
