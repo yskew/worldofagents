@@ -80,6 +80,23 @@ async def refine_agent(
     return agent
 
 
+async def set_challenge_profile(
+    db: AsyncSession, agent_id: uuid.UUID, human_id: uuid.UUID, responses: dict
+) -> list[str] | None:
+    """Store per-probe response signatures (RFC 0008). Returns the profiled probe
+    ids, or None if the agent is not found / revoked."""
+    agent = await get_agent(db, agent_id, human_id)
+    if agent is None or agent.status == "revoked":
+        return None
+    profile = {
+        probe_id: extract_features(trajectory)
+        for probe_id, trajectory in responses.items()
+    }
+    agent.challenge_profile = profile
+    await db.commit()
+    return sorted(profile.keys())
+
+
 async def rotate_key(db: AsyncSession, agent_id: uuid.UUID, human_id: uuid.UUID) -> str | None:
     agent = await get_agent(db, agent_id, human_id)
     if agent is None or agent.status == "revoked":

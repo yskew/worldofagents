@@ -19,6 +19,14 @@ class Settings(BaseSettings):
     VERIFICATION_FAIL_THRESHOLD: float = 0.4
     SIGNATURE_VECTOR_DIM: int = 256
 
+    # Active challenge-response verification (RFC 0008). Challenge tokens are
+    # HMAC-signed and single-use; CHALLENGE_SECRET must be set to a strong random
+    # value in production (rotating it invalidates outstanding challenges only).
+    CHALLENGE_SECRET: str = "dev-challenge-secret-change-me"
+    CHALLENGE_TTL_SECONDS: int = 120
+    CHALLENGE_NUM_PROBES: int = 3
+    ACTIVE_VERIFICATION_PASS_THRESHOLD: float = 0.7
+
     # Hardening (RFC 0007). CORS: comma-separated allowed origins; "*" disables
     # credentialed CORS (spec-compliant). Rate limit: per-IP requests/min on the
     # open scoring endpoints (in-memory; use a shared store for multi-instance).

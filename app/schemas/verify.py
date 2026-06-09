@@ -53,3 +53,44 @@ class SimilarResponse(BaseModel):
     # agents excluded because their stored vector predates the active encoding
     # (run scripts/reembed.py to include them)
     stale_excluded: int = 0
+
+
+# --- Active challenge-response verification (RFC 0008) -----------------------
+
+class ChallengeProfileRequest(BaseModel):
+    # {probe_id: trajectory the agent produced for that probe}
+    responses: dict[str, list[TrajectoryStep]] = Field(..., min_length=1)
+
+
+class ChallengeProfileResponse(BaseModel):
+    profiled_probes: list[str]
+
+
+class ChallengeRequest(BaseModel):
+    agent_id: uuid.UUID
+
+
+class Probe(BaseModel):
+    id: str
+    stimulus: str
+
+
+class ChallengeResponse(BaseModel):
+    challenge_token: str
+    probes: list[Probe]
+    expires_in: int
+
+
+class ActiveVerifyRequest(BaseModel):
+    agent_id: uuid.UUID
+    agent_key: str
+    challenge_token: str
+    responses: dict[str, list[TrajectoryStep]] = Field(..., min_length=1)
+
+
+class ActiveVerifyResponse(BaseModel):
+    verified: bool
+    active_score: float
+    verdict: Literal["pass", "fail", "warning"]
+    token: str | None = None
+    per_probe: dict[str, float]
