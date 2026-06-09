@@ -15,6 +15,13 @@ class Settings(BaseSettings):
     RSA_PUBLIC_KEY_PEM: str = ""
     JWT_ISSUER: str = "agentverify"
     JWT_EXPIRY_SECONDS: int = 3600
+
+    # Token-exchange broker (RFC 0009). Downstream delegated tokens are short-lived.
+    # OIDC_PROVIDERS_JSON is an optional JSON array of external IdPs to federate
+    # ALONGSIDE Clerk (which is always available and unchanged), e.g.
+    # [{"id":"okta","issuer":"https://x.okta.com","jwks_url":"...","audience":"..."}].
+    DOWNSTREAM_TOKEN_EXPIRY_SECONDS: int = 300
+    OIDC_PROVIDERS_JSON: str = ""
     VERIFICATION_PASS_THRESHOLD: float = 0.7
     VERIFICATION_FAIL_THRESHOLD: float = 0.4
     SIGNATURE_VECTOR_DIM: int = 256

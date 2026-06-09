@@ -12,6 +12,8 @@ from app.schemas.agent import (
     AgentRefineRequest,
     AgentRegisterRequest,
     AgentRegisterResponse,
+    AgentScopesRequest,
+    AgentScopesResponse,
 )
 from app.schemas.verify import ChallengeProfileRequest, ChallengeProfileResponse
 from app.services import agent_service
@@ -114,6 +116,19 @@ async def set_challenge_profile(
     if profiled is None:
         raise HTTPException(status_code=404, detail="Agent not found")
     return ChallengeProfileResponse(profiled_probes=profiled)
+
+
+@router.post("/{agent_id}/scopes")
+async def set_scopes(
+    agent_id: uuid.UUID,
+    request: AgentScopesRequest,
+    human: Human = Depends(get_current_human),
+    db: AsyncSession = Depends(get_db),
+) -> AgentScopesResponse:
+    scopes = await agent_service.set_allowed_scopes(db, agent_id, human.id, request.scopes)
+    if scopes is None:
+        raise HTTPException(status_code=404, detail="Agent not found")
+    return AgentScopesResponse(allowed_scopes=scopes)
 
 
 @router.post("/{agent_id}/rotate-key")

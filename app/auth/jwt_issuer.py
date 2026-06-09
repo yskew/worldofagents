@@ -85,6 +85,45 @@ class JWTIssuer:
             payload, self._private_key, algorithm="RS256", headers={"kid": self._kid}
         )
 
+    def verify_own_token(self, token: str) -> dict:
+        """Verify a token we issued (e.g. a verification JWT used as an RFC 8693
+        actor_token). Raises jwt.PyJWTError on failure."""
+        return jwt.decode(
+            token,
+            self._public_key,
+            algorithms=["RS256"],
+            issuer=settings.JWT_ISSUER,
+            options={"verify_aud": False},
+        )
+
+    def issue_delegated_token(
+        self,
+        subject: str,
+        agent_id: str,
+        agent_name: str,
+        audience: str,
+        scopes: list[str],
+        expiry_seconds: int | None = None,
+    ) -> str:
+        """Mint a scoped, audience-bound downstream token (RFC 8693 delegation).
+        sub = human, act.sub = agent, plus aud + scope for least-privilege."""
+        now = datetime.now(timezone.utc)
+        exp = expiry_seconds or settings.DOWNSTREAM_TOKEN_EXPIRY_SECONDS
+        payload = {
+            "iss": settings.JWT_ISSUER,
+            "sub": subject,
+            "act": {"sub": agent_id},
+            "agent_name": agent_name,
+            "aud": audience,
+            "scope": " ".join(scopes),
+            "iat": now,
+            "exp": now + timedelta(seconds=exp),
+            "jti": str(uuid.uuid4()),
+        }
+        return jwt.encode(
+            payload, self._private_key, algorithm="RS256", headers={"kid": self._kid}
+        )
+
     def jwks(self) -> dict:
         pub_numbers = self._public_key.public_numbers()
         n_bytes = pub_numbers.n.to_bytes((pub_numbers.n.bit_length() + 7) // 8, "big")
