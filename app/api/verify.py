@@ -8,6 +8,7 @@ from app.database import get_db
 from app.models.agent import Agent
 from app.models.verification_log import VerificationLog
 from app.schemas.verify import CompareRequest, CompareResponse, VerifyRequest, VerifyResponse
+from app.services import ssf
 from app.services.signature_engine import compare_signatures, extract_features, features_to_vector
 
 router = APIRouter(tags=["verify"])
@@ -45,17 +46,23 @@ async def verify_agent(
     db.add(log)
     await db.commit()
 
+    from app.models.human import Human
+    human = (await db.execute(select(Human).where(Human.id == agent.human_id))).scalar_one()
+
     token = None
     if passed:
-        from app.models.human import Human
-        human_result = await db.execute(select(Human).where(Human.id == agent.human_id))
-        human = human_result.scalar_one()
         issuer = get_jwt_issuer()
         token = issuer.issue_token(
             human_clerk_id=human.clerk_id,
             agent_id=str(agent.id),
             agent_name=agent.name,
             similarity_score=comparison["overall_score"],
+        )
+    else:
+        # RFC 0011: a failed behavioral check is a risk signal — emit a CAEP event
+        # so subscribed IdPs/relying parties can react (continuous access eval).
+        ssf.emit_behavioral_anomaly(
+            human, str(agent.id), agent.name, comparison["overall_score"], "verification_failed",
         )
 
     return VerifyResponse(

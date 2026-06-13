@@ -53,6 +53,10 @@ async def delete_agent(db: AsyncSession, agent_id: uuid.UUID, human_id: uuid.UUI
         return False
     agent.status = "revoked"
     await db.commit()
+    # RFC 0011: emit a CAEP session-revoked event for receivers.
+    from app.services import ssf
+    human = (await db.execute(select(Human).where(Human.id == agent.human_id))).scalar_one()
+    ssf.emit_session_revoked(human, str(agent.id), agent.name)
     return True
 
 
