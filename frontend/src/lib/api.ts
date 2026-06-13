@@ -88,9 +88,49 @@ export interface TrajectoryStep {
   metadata?: Record<string, unknown>;
 }
 
+export interface SsfPollResponse {
+  sets: Record<string, string>;
+}
+
+// A decoded Shared Signals event (CAEP), for display.
+export interface SignalEvent {
+  jti: string;
+  type: string;
+  subject: string;
+  agentName?: string;
+  reason?: string;
+  score?: number;
+  ts?: number;
+}
+
+function _b64urlJson(segment: string): Record<string, unknown> {
+  const pad = segment + '='.repeat((4 - (segment.length % 4)) % 4);
+  return JSON.parse(atob(pad.replace(/-/g, '+').replace(/_/g, '/')));
+}
+
+// Decode (without verifying) a SET into a display-friendly SignalEvent.
+export function decodeSet(jti: string, token: string): SignalEvent {
+  const payload = _b64urlJson(token.split('.')[1]) as {
+    events: Record<string, Record<string, unknown>>;
+  };
+  const [type, ev] = Object.entries(payload.events)[0];
+  const subj = (ev.subject as { email?: string; id?: string }) || {};
+  return {
+    jti,
+    type: type.split('/').pop() || type,
+    subject: subj.email || subj.id || 'unknown',
+    agentName: ev.agent_name as string | undefined,
+    reason: ev.reason as string | undefined,
+    score: ev.similarity_score as number | undefined,
+    ts: ev.event_timestamp as number | undefined,
+  };
+}
+
 export const api = {
   // open endpoints — no auth
   health: () => request<{ status: string }>('/health'),
+  ssfPoll: (maxEvents = 100, ack: string[] = []) =>
+    request<SsfPollResponse>('/ssf/poll', { method: 'POST', body: JSON.stringify({ maxEvents, ack }) }),
   verify: (data: { agent_id: string; agent_key: string; trajectory: TrajectoryStep[] }) =>
     request<VerifyResponse>('/verify', { method: 'POST', body: JSON.stringify(data) }),
   compare: (trajectory_a: TrajectoryStep[], trajectory_b: TrajectoryStep[]) =>

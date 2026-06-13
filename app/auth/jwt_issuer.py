@@ -65,6 +65,23 @@ class JWTIssuer:
             payload, self._private_key, algorithm="RS256", headers={"kid": self._kid}
         )
 
+    def issue_set(self, events: dict, audience: str | None = None) -> str:
+        """Sign a Security Event Token (RFC 8417) for Shared Signals / CAEP
+        delivery (RFC 0011). `events` maps event-type URIs to event objects."""
+        now = datetime.now(timezone.utc)
+        payload = {
+            "iss": settings.JWT_ISSUER,
+            "iat": now,
+            "jti": str(uuid.uuid4()),
+            "events": events,
+        }
+        if audience:
+            payload["aud"] = audience
+        return jwt.encode(
+            payload, self._private_key, algorithm="RS256",
+            headers={"kid": self._kid, "typ": "secevent+jwt"},
+        )
+
     def jwks(self) -> dict:
         pub_numbers = self._public_key.public_numbers()
         n_bytes = pub_numbers.n.to_bytes((pub_numbers.n.bit_length() + 7) // 8, "big")
