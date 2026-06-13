@@ -94,3 +94,22 @@ class ActiveVerifyResponse(BaseModel):
     verdict: Literal["pass", "fail", "warning"]
     token: str | None = None
     per_probe: dict[str, float]
+
+
+# --- Telemetry ingestion (RFC 0010) -----------------------------------------
+
+class TelemetryIngestRequest(BaseModel):
+    agent_id: uuid.UUID
+    agent_key: str
+    source: Literal["otel", "langfuse", "braintrust"]
+    spans: list[dict] = Field(..., min_length=1)
+    # When False, map + summarize only (preview) without mutating the signature.
+    apply: bool = True
+
+
+class TelemetryIngestResponse(BaseModel):
+    source: str
+    ingested_spans: int
+    mapped_steps: int
+    summary: dict
+    applied: bool
