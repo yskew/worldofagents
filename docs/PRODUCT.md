@@ -1,4 +1,4 @@
-# World of Agents — Product Document
+# World of Agents: Product Document
 
 *Version 0.2 · status: research MVP with extended integration layer*
 
@@ -6,18 +6,18 @@
 
 ## 1. One-liner
 
-**The missing identity layer for AI agents** — an open platform that lets any
+**The missing identity layer for AI agents**, an open platform that lets any
 agent prove which human owns it, continuously verify its behavioral identity, and
 act on its owner's behalf with scoped, attributable, short-lived credentials.
 
 ## 2. The problem
 
-AI agents act in the world on behalf of humans — they write code, deploy
+AI agents act in the world on behalf of humans, they write code, deploy
 infrastructure, query data, send messages, and call other agents and tools. Every
 one of them authenticates today in one of two unacceptable ways:
 
-1. **No identity** — runs in a trusted environment with inherited permissions.
-2. **Stolen identity** — a human's OAuth token / API key pasted into the agent's
+1. **No identity**, runs in a trusted environment with inherited permissions.
+2. **Stolen identity**, a human's OAuth token / API key pasted into the agent's
    environment, giving it full, *indistinguishable* access.
 
 So no downstream system can answer three questions that underlie all of IAM:
@@ -29,7 +29,7 @@ So no downstream system can answer three questions that underlie all of IAM:
 
 Service accounts don't fit: they are static and long-lived, whereas agents are
 autonomous, probabilistic, and change behavior every prompt. The pressure is
-acute and growing — agent-to-agent protocols (MCP, A2A) are proliferating, and a
+acute and growing, agent-to-agent protocols (MCP, A2A) are proliferating, and a
 widely-cited observation is that essentially all surveyed MCP servers ship with
 no authentication at all.
 
@@ -48,7 +48,7 @@ We build Binding and Runtime Identity, and we *finish* the wheel by delegating
 human auth and authorization to mature systems. Runtime identity is the novel
 part: a **behavioral signature** computed from an agent's trajectory (its tool
 calls, messages, timing, errors), used for verification and continuous
-anomaly detection — combined with a cryptographic agent key so the soft signal
+anomaly detection, combined with a cryptographic agent key so the soft signal
 never stands alone.
 
 ## 4. Target users & personas
@@ -65,9 +65,9 @@ never stands alone.
 
 1. **Register & bind** an agent to a human; issue a one-time bcrypt-hashed agent key.
 2. **Verify** identity two ways:
-   - *Passive* — submit a trajectory; cryptographic key check + behavioral
+   - *Passive*, submit a trajectory; cryptographic key check + behavioral
      similarity → delegated RS256 JWT (`sub`=human, `act.sub`=agent).
-   - *Active (challenge-response)* — the verifier issues fresh, single-use,
+   - *Active (challenge-response)*, the verifier issues fresh, single-use,
      server-chosen probes the agent must answer live; defeats trajectory replay.
 3. **Authorize downstream** via an RFC 8693 token-exchange broker: human IdP token
    + agent attestation → scoped, audience-bound, short-lived delegated token a
@@ -95,22 +95,22 @@ never stands alone.
 | RFC 8693 delegation | ✅ | ✅ | ❌ | partial |
 | Open-source, vendor-neutral, self-hosted | ✅ | ✅ | ✅ | ❌ |
 
-**The defensible position:** don't become another IdP login button — become the
+**The defensible position:** don't become another IdP login button, become the
 **agent-behavior risk signal** the existing IdP stack subscribes to, and the
 **authorization layer** for the MCP/A2A greenfield. No production system today
 does behavioral verification; that is the wedge.
 
 ## 7. Product principles
 
-- **Delegation, not impersonation** — the agent wields the human's identity *with
+- **Delegation, not impersonation**, the agent wields the human's identity *with
   attribution*, never a new principal.
-- **Honest about strength** — cryptographic factors (key, signed tokens) are hard;
+- **Honest about strength**, cryptographic factors (key, signed tokens) are hard;
   behavioral signals are anomaly detection. We never conflate the two.
-- **Integrate, don't reinvent** — Clerk/OIDC for humans, OAuth/RFC 8693 for authz,
+- **Integrate, don't reinvent**, Clerk/OIDC for humans, OAuth/RFC 8693 for authz,
   OpenTelemetry/Langfuse/Braintrust for telemetry, pgvector for search.
-- **Standards-first** — RFC 8693, RFC 8417/8935/8936 (SETs), OpenID CAEP/SSF,
+- **Standards-first**, RFC 8693, RFC 8417/8935/8936 (SETs), OpenID CAEP/SSF,
   OpenTelemetry GenAI, MCP.
-- **Ship behind flags; flip on evidence** — every behavioral change is gated and
+- **Ship behind flags; flip on evidence**, every behavioral change is gated and
   validated before becoming default.
 
 ## 8. Success metrics

@@ -1,4 +1,4 @@
-# World of Agents — Feature Status
+# World of Agents: Feature Status
 
 Status of every capability: **shipped**, **in progress / pending**, or **future
 scope**. PR and RFC references point to the design + test artifacts. "Default"
@@ -29,9 +29,9 @@ Legend: ✅ shipped & tested · 🟡 built but gated off / pending wiring · ⬜
 | 0002 | Hashed vector encoding (stable per-tool dims, bounded transforms) | ✅ | **on** | #1 |
 | 0003 | Offline eval harness + powered default flip | ✅ | n/a | #1 |
 | 0004 | Learned ensemble weights (logistic regression) | 🟡 | off | #1 |
-| 0005 | `POST /similar` — pgvector ANN + ensemble re-rank (HNSW) | ✅ | on | #1 |
+| 0005 | `POST /similar`, pgvector ANN + ensemble re-rank (HNSW) | ✅ | on | #1 |
 | 0006 | Score calibration (Platt scaling, `confidence` field) | 🟡 | off | #1 |
-| 0007 | Hardening — JWT fail-loud, dev-auth gating, rate limit, CORS | ✅ | on | #1 |
+| 0007 | Hardening, JWT fail-loud, dev-auth gating, rate limit, CORS | ✅ | on | #1 |
 | 0008 | Active challenge-response verification (replay-proof) | ✅ | additive | #1 |
 
 > RFC 0004 and 0006 are **built and tested but intentionally disabled**: they were
@@ -63,18 +63,18 @@ Legend: ✅ shipped & tested · 🟡 built but gated off / pending wiring · ⬜
 
 These are built-but-gated or awaiting a dependency, not new research:
 
-- **Flip learned weights (0004) and calibration (0006) defaults** — blocked on a
+- **Flip learned weights (0004) and calibration (0006) defaults**, blocked on a
   real labeled corpus; Telemetry (0010) is the collection mechanism.
-- **Discriminative probe selection (0008)** — current selection is nonce-seeded
+- **Discriminative probe selection (0008)**, current selection is nonce-seeded
   random; ranking probes by population-discriminativeness needs the corpus.
 - **Cross-feature wiring** (lands when the independent PRs merge):
   - continuous-attestation `alarm` → CAEP emit (0013 → 0011),
   - MCP tool authorization derived from broker token scopes (0012 ← 0009).
-- **Cross-provider account linking** — external-OIDC humans owning Clerk-registered
+- **Cross-provider account linking**, external-OIDC humans owning Clerk-registered
   agents (broker, 0009).
-- **Multi-instance state** — move in-memory stores (rate limiter, challenge
+- **Multi-instance state**, move in-memory stores (rate limiter, challenge
   nonces, SSF queue, attestation sessions) to a shared store (Redis).
-- **Full browser E2E** — requires a Clerk publishable key / dev auth fallback;
+- **Full browser E2E**, requires a Clerk publishable key / dev auth fallback;
   current UI coverage is component + client + production build.
 
 ---
@@ -83,25 +83,25 @@ These are built-but-gated or awaiting a dependency, not new research:
 
 Larger bets not yet started, roughly in priority order:
 
-1. **Real-trajectory benchmark + leaderboard** — turn the synthetic eval harness
+1. **Real-trajectory benchmark + leaderboard**, turn the synthetic eval harness
    (0003) into an open, multi-model, multi-framework corpus + public benchmark for
    agent behavioral identity. Unblocks 0004/0006/probes and the item below.
-2. **Learned contrastive trajectory embeddings** — replace bag-of-statistics with
+2. **Learned contrastive trajectory embeddings**, replace bag-of-statistics with
    a trained encoder (contrastive same/different objective), stored in the existing
    pgvector column behind the `features_to_vector` interface.
-3. **Cryptographic runtime root (TEE / signed manifest)** — bind model-weights
+3. **Cryptographic runtime root (TEE / signed manifest)**, bind model-weights
    hash + system-prompt hash + tool set to remote attestation, making agent
    runtime identity *cryptographic*; behavior becomes the liveness layer atop it.
-4. **Decentralized & privacy-preserving verification** — verifiable credentials /
+4. **Decentralized & privacy-preserving verification**, verifiable credentials /
    DIDs so receivers verify without calling home; ZK proof of signature match so
    identity is proven without revealing the trajectory.
-5. **Full MCP transport + A2A handshake** — JSON-RPC over stdio/SSE; the current
+5. **Full MCP transport + A2A handshake**, JSON-RPC over stdio/SSE; the current
    work implements the authorization decision, not the transport.
-6. **Full SSF stream lifecycle** — RFC 8935 stream registration/verification
+6. **Full SSF stream lifecycle**, RFC 8935 stream registration/verification
    endpoints (currently static config + poll/push).
-7. **Standards contribution** — submit the behavioral-attestation profile to the
+7. **Standards contribution**, submit the behavioral-attestation profile to the
    IETF / OpenID agent-identity efforts.
-8. **Adaptive thresholds & per-agent calibration** — learned from the corpus.
+8. **Adaptive thresholds & per-agent calibration**, learned from the corpus.
 
 ---
 
