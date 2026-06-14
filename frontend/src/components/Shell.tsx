@@ -6,6 +6,7 @@ const links = [
   { to: '/agents', label: 'AGENTS' },
   { to: '/verify', label: 'VERIFY' },
   { to: '/compare', label: 'COMPARE' },
+  { to: '/mcp', label: 'MCP' },
 ];
 
 export default function Shell() {

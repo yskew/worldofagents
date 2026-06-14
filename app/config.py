@@ -15,6 +15,10 @@ class Settings(BaseSettings):
     VERIFICATION_FAIL_THRESHOLD: float = 0.4
     SIGNATURE_VECTOR_DIM: int = 256
 
+    # MCP / A2A reference authorization server (RFC 0012). Gates tool calls on a
+    # valid behavioral-attestation token + per-agent tool allowlist.
+    MCP_ENABLED: bool = True
+
     @property
     def async_database_url(self) -> str:
         url = self.DATABASE_URL
