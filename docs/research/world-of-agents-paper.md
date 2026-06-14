@@ -1,17 +1,22 @@
 # World of Agents: A Behavioral Identity and Continuous Attestation Layer for AI Agents
 
-Raghul V
+Raghul V¹ and Aashiq R²
 
-Affiliation (to be completed)
+¹ Axari
+
+² Bishop Fox
 
 **Author Note**
 
-Correspondence concerning this article should be addressed to the first author
-(contact to be completed). A reproducible software artifact accompanies this work,
-including the signature engine, the evaluation harness, per-component design notes,
-and automated test reports. The quantitative results reported here were obtained on
-a synthetic benchmark; this scope is stated explicitly throughout the paper, and a
-real corpus evaluation is identified as the primary direction for future work.
+Raghul V is affiliated with Axari. Aashiq R is affiliated with Bishop Fox.
+Correspondence concerning this article may be addressed to Raghul V, Axari
+(raghul.v.inbox@gmail.com) or Aashiq R, Bishop Fox
+(ramachandran.aashiq@gmail.com). A reproducible software artifact accompanies this
+work, including the signature engine, the evaluation harness, per component design
+notes, and automated test reports. The quantitative results reported here were
+obtained on a synthetic benchmark. This scope is stated explicitly throughout the
+paper, and a real corpus evaluation is identified as the primary direction for
+future work.
 
 ---
 
