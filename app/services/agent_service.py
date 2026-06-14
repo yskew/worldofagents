@@ -73,6 +73,18 @@ async def refine_agent(
     return agent
 
 
+async def set_tool_allowlist(
+    db: AsyncSession, agent_id: uuid.UUID, human_id: uuid.UUID, tools: list[str]
+) -> list[str] | None:
+    """Set the MCP tools this agent may call (RFC 0012)."""
+    agent = await get_agent(db, agent_id, human_id)
+    if agent is None or agent.status == "revoked":
+        return None
+    agent.tool_allowlist = sorted(set(tools))
+    await db.commit()
+    return agent.tool_allowlist
+
+
 async def rotate_key(db: AsyncSession, agent_id: uuid.UUID, human_id: uuid.UUID) -> str | None:
     agent = await get_agent(db, agent_id, human_id)
     if agent is None or agent.status == "revoked":

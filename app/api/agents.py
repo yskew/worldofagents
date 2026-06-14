@@ -12,8 +12,11 @@ from app.schemas.agent import (
     AgentRefineRequest,
     AgentRegisterRequest,
     AgentRegisterResponse,
+    AgentToolsRequest,
+    AgentToolsResponse,
 )
 from app.services import agent_service
+from app.services.mcp import TOOL_NAMES
 
 router = APIRouter(prefix="/agents", tags=["agents"])
 
@@ -94,6 +97,22 @@ async def refine_agent(
     if agent is None:
         raise HTTPException(status_code=404, detail="Agent not found")
     return _agent_detail(agent)
+
+
+@router.post("/{agent_id}/tools")
+async def set_tools(
+    agent_id: uuid.UUID,
+    request: AgentToolsRequest,
+    human: Human = Depends(get_current_human),
+    db: AsyncSession = Depends(get_db),
+) -> AgentToolsResponse:
+    unknown = [t for t in request.tools if t not in TOOL_NAMES]
+    if unknown:
+        raise HTTPException(status_code=422, detail=f"Unknown tools: {unknown}")
+    allowlist = await agent_service.set_tool_allowlist(db, agent_id, human.id, request.tools)
+    if allowlist is None:
+        raise HTTPException(status_code=404, detail="Agent not found")
+    return AgentToolsResponse(tool_allowlist=allowlist)
 
 
 @router.post("/{agent_id}/rotate-key")

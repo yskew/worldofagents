@@ -88,9 +88,30 @@ export interface TrajectoryStep {
   metadata?: Record<string, unknown>;
 }
 
+export interface McpTool {
+  name: string;
+  description: string;
+}
+
+export interface McpCallResult {
+  tool: string;
+  status: string;
+  result: Record<string, unknown>;
+  agent_id: string | null;
+  principal: string | null;
+}
+
 export const api = {
   // open endpoints — no auth
   health: () => request<{ status: string }>('/health'),
+  mcpTools: () => request<{ tools: McpTool[] }>('/mcp/tools'),
+  // gated tool call: bearer = the agent's attestation token from /verify
+  mcpCall: (token: string, tool: string, args: Record<string, unknown> = {}) =>
+    request<McpCallResult>('/mcp/call', {
+      method: 'POST',
+      body: JSON.stringify({ tool, arguments: args }),
+      headers: { Authorization: `Bearer ${token}` },
+    }),
   verify: (data: { agent_id: string; agent_key: string; trajectory: TrajectoryStep[] }) =>
     request<VerifyResponse>('/verify', { method: 'POST', body: JSON.stringify(data) }),
   compare: (trajectory_a: TrajectoryStep[], trajectory_b: TrajectoryStep[]) =>

@@ -29,6 +29,8 @@ class Agent(Base):
     key_salt: Mapped[str] = mapped_column(String(255), nullable=False)
     signature: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     signature_vector = mapped_column(Vector(256), nullable=True)
+    # RFC 0012: MCP tools this agent is authorized to call. NULL/[] = none.
+    tool_allowlist: Mapped[list | None] = mapped_column(JSONB, nullable=True)
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="active")
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
