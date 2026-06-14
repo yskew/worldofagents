@@ -9,6 +9,7 @@ import Dashboard from './pages/Dashboard';
 import Agents from './pages/Agents';
 import Verify from './pages/Verify';
 import Compare from './pages/Compare';
+import Attestation from './pages/Attestation';
 import { setTokenGetter } from './lib/api';
 
 export default function App() {
@@ -87,6 +88,7 @@ export default function App() {
             <Route path="agents" element={<Agents />} />
             <Route path="verify" element={<Verify />} />
             <Route path="compare" element={<Compare />} />
+            <Route path="attestation" element={<Attestation />} />
           </Route>
         </Routes>
       </PixelTransition>
