@@ -15,6 +15,14 @@ class Settings(BaseSettings):
     VERIFICATION_FAIL_THRESHOLD: float = 0.4
     SIGNATURE_VECTOR_DIM: int = 256
 
+    # Continuous mid-session attestation (RFC 0013). CUSUM over per-window
+    # similarity vs the agent's baseline; accumulates (ref - similarity) and
+    # alarms on sustained downward drift (model swap / hijack).
+    ATTEST_ENABLED: bool = True
+    ATTEST_REF_SIMILARITY: float = 0.5
+    ATTEST_WARN_THRESHOLD: float = 0.3
+    ATTEST_ALARM_THRESHOLD: float = 0.6
+
     @property
     def async_database_url(self) -> str:
         url = self.DATABASE_URL

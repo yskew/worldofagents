@@ -88,9 +88,20 @@ export interface TrajectoryStep {
   metadata?: Record<string, unknown>;
 }
 
+export interface AttestStep {
+  window_similarity: number;
+  cusum: number;
+  status: 'ok' | 'warning' | 'alarm';
+  windows: number;
+}
+
 export const api = {
   // open endpoints — no auth
   health: () => request<{ status: string }>('/health'),
+  attestStart: (agent_id: string, agent_key: string) =>
+    request<{ session_id: string }>('/attest/start', { method: 'POST', body: JSON.stringify({ agent_id, agent_key }) }),
+  attestStep: (session_id: string, trajectory: TrajectoryStep[]) =>
+    request<AttestStep>('/attest/step', { method: 'POST', body: JSON.stringify({ session_id, trajectory }) }),
   verify: (data: { agent_id: string; agent_key: string; trajectory: TrajectoryStep[] }) =>
     request<VerifyResponse>('/verify', { method: 'POST', body: JSON.stringify(data) }),
   compare: (trajectory_a: TrajectoryStep[], trajectory_b: TrajectoryStep[]) =>
