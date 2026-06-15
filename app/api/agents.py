@@ -13,7 +13,9 @@ from app.schemas.agent import (
     AgentRegisterRequest,
     AgentRegisterResponse,
 )
+from app.schemas.verify import ChallengeProfileRequest, ChallengeProfileResponse
 from app.services import agent_service
+from app.services.challenge_bank import PROBE_IDS
 
 router = APIRouter(prefix="/agents", tags=["agents"])
 
@@ -94,6 +96,24 @@ async def refine_agent(
     if agent is None:
         raise HTTPException(status_code=404, detail="Agent not found")
     return _agent_detail(agent)
+
+
+@router.post("/{agent_id}/challenge-profile")
+async def set_challenge_profile(
+    agent_id: uuid.UUID,
+    request: ChallengeProfileRequest,
+    human: Human = Depends(get_current_human),
+    db: AsyncSession = Depends(get_db),
+) -> ChallengeProfileResponse:
+    unknown = [pid for pid in request.responses if pid not in PROBE_IDS]
+    if unknown:
+        raise HTTPException(status_code=422, detail=f"Unknown probe ids: {unknown}")
+    profiled = await agent_service.set_challenge_profile(
+        db, agent_id, human.id, request.responses
+    )
+    if profiled is None:
+        raise HTTPException(status_code=404, detail="Agent not found")
+    return ChallengeProfileResponse(profiled_probes=profiled)
 
 
 @router.post("/{agent_id}/rotate-key")

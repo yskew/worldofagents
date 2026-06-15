@@ -9,6 +9,11 @@ from app.main import app
 
 PG_DSN = settings.DATABASE_URL.replace("+asyncpg", "")
 
+# The many API tests share one client IP; the per-IP rate limit (RFC 0007) would
+# trip across the suite. Disable it globally for tests; test_hardening.py
+# re-enables it locally to verify the 429 path.
+settings.RATE_LIMIT_ENABLED = False
+
 
 @pytest.fixture
 async def db_session():

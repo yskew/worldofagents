@@ -423,7 +423,10 @@ class TestVerification:
         assert "cosine_score" in bd
         assert "markov_score" in bd
         assert "stats_score" in bd
-        assert all(0 <= bd[k] <= 1 for k in bd)
+        # sub-scores are in [0, 1], or None when a metric abstains (RFC 0001).
+        # effective_weights (RFC 0001 V2) is a nested dict, not a sub-score.
+        score_keys = ("jsd_score", "cosine_score", "markov_score", "stats_score")
+        assert all(bd[k] is None or 0 <= bd[k] <= 1 for k in score_keys)
 
     @pytest.mark.asyncio
     async def test_verify_logs_to_database(self, ctx):

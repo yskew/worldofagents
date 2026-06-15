@@ -45,28 +45,34 @@ export interface RegisterResponse {
   status: string;
 }
 
+// A metric may abstain (null) when a trajectory lacks the structure to measure
+// it. effective_weights is present under score-normalization V2 and reflects the
+// redistributed weight actually applied to each metric (sums to 1.0).
+export interface ScoreBreakdown {
+  jsd_score: number | null;
+  cosine_score: number | null;
+  markov_score: number | null;
+  stats_score: number | null;
+  effective_weights?: {
+    jsd: number;
+    cosine: number;
+    markov: number;
+    stats: number;
+  };
+}
+
 export interface VerifyResponse {
   verified: boolean;
   similarity_score: number;
   verdict: 'pass' | 'fail' | 'warning';
   token: string | null;
-  breakdown: {
-    jsd_score: number;
-    cosine_score: number;
-    markov_score: number;
-    stats_score: number;
-  } | null;
+  breakdown: ScoreBreakdown | null;
 }
 
 export interface CompareResponse {
   similarity_score: number;
   verdict: 'pass' | 'fail' | 'warning';
-  breakdown: {
-    jsd_score: number;
-    cosine_score: number;
-    markov_score: number;
-    stats_score: number;
-  };
+  breakdown: ScoreBreakdown;
 }
 
 export interface PublicProfile {

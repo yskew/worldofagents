@@ -1,12 +1,13 @@
 from __future__ import annotations
 
+import hashlib
 import math
 from collections import Counter, defaultdict
 
 import numpy as np
 from scipy.spatial.distance import cosine, jensenshannon
 
-from app.config import settings
+from app.config import CALIBRATION_PARAMS, LEARNED_METRIC_WEIGHTS, settings
 from app.schemas.agent import TrajectoryStep
 
 VECTOR_DIM = settings.SIGNATURE_VECTOR_DIM
@@ -29,6 +30,15 @@ def extract_features(trajectory: list[TrajectoryStep]) -> dict:
 
 
 def features_to_vector(features: dict) -> list[float]:
+    """Encode a feature dict into the fixed-dim signature vector. Dispatches on
+    the VECTOR_ENCODING_V2 flag; the vector is a derived cache of the feature
+    dict, so it can always be recomputed from the stored signature JSONB."""
+    if settings.VECTOR_ENCODING_V2:
+        return _features_to_vector_v2(features)
+    return _features_to_vector_v1(features)
+
+
+def _features_to_vector_v1(features: dict) -> list[float]:
     vec = np.zeros(VECTOR_DIM, dtype=np.float64)
 
     histogram = features.get("tool_call_histogram", {})
@@ -68,18 +78,133 @@ def features_to_vector(features: dict) -> list[float]:
     return vec.tolist()
 
 
+# --- RFC 0002: hashed-band encoding -----------------------------------------
+#
+# Each band occupies a contiguous slice of the 256-dim vector. Categorical
+# features (tools, transitions) are placed by a *stable* hash of their name, so
+# the same tool maps to the same dimension for every agent -> cosine compares
+# like-for-like instead of comparing distribution shapes. Scalar features use
+# bounded transforms (squash / tanh) instead of magic divisors so no value can
+# saturate or vanish off-scale.
+_V2_BANDS = {
+    "histogram": (0, 96),
+    "bigram": (96, 80),
+    "trigram": (176, 48),
+    # scalar bands (start indices); each documented inline below
+    "rlen": 224,   # 224..227
+    "vocab": 232,  # 232..234
+    "timing": 240,  # 240..242
+    "struct": 248,  # 248..251
+}
+
+
+def _stable_hash(s: str) -> int:
+    """Process-independent hash. NOT builtin hash() (salted per process), which
+    would make persisted vectors irreproducible across restarts."""
+    return int.from_bytes(hashlib.blake2b(s.encode("utf-8"), digest_size=8).digest(), "big")
+
+
+def _hashed_bucket(key: str, size: int) -> int:
+    return _stable_hash(key) % size
+
+
+def _hashed_sign(key: str) -> float:
+    # Independent bit from a distinct hash input; signed hashing makes random
+    # collisions cancel in expectation rather than always inflate a bucket.
+    return 1.0 if (_stable_hash(key + "\x00sign") & 1) else -1.0
+
+
+def _squash(x: float, k: float) -> float:
+    """Monotonic map of a non-negative quantity into [0, 1) with knee at k."""
+    if x <= 0:
+        return 0.0
+    return x / (x + k)
+
+
+def _features_to_vector_v2(features: dict) -> list[float]:
+    vec = np.zeros(VECTOR_DIM, dtype=np.float64)
+
+    h_start, h_size = _V2_BANDS["histogram"]
+    for name, val in features.get("tool_call_histogram", {}).items():
+        vec[h_start + _hashed_bucket(name, h_size)] += _hashed_sign(name) * val
+
+    b_start, b_size = _V2_BANDS["bigram"]
+    for src, dsts in features.get("transition_matrix", {}).items():
+        for dst, prob in dsts.items():
+            key = f"{src}>{dst}"
+            vec[b_start + _hashed_bucket(key, b_size)] += _hashed_sign(key) * prob
+
+    t_start, t_size = _V2_BANDS["trigram"]
+    for src, dsts in features.get("trigram_transitions", {}).items():
+        for dst, prob in dsts.items():
+            key = f"{src}>{dst}"
+            vec[t_start + _hashed_bucket(key, t_size)] += _hashed_sign(key) * prob
+
+    r = _V2_BANDS["rlen"]
+    rstats = features.get("response_length_stats", {})
+    vec[r + 0] = _squash(rstats.get("mean", 0), 200.0)
+    vec[r + 1] = _squash(rstats.get("variance", 0), 10000.0)
+    vec[r + 2] = math.tanh(rstats.get("skewness", 0) / 2.0)  # skew may be negative
+    vec[r + 3] = _squash(rstats.get("count", 0), 10.0)
+
+    v = _V2_BANDS["vocab"]
+    vstats = features.get("vocabulary_stats", {})
+    vec[v + 0] = float(vstats.get("type_token_ratio", 0))  # already in [0, 1]
+    vec[v + 1] = _squash(vstats.get("unique_tokens", 0), 100.0)
+    vec[v + 2] = _squash(vstats.get("total_tokens", 0), 200.0)
+
+    tm = _V2_BANDS["timing"]
+    tstats = features.get("timing_stats") or {}
+    vec[tm + 0] = _squash(tstats.get("mean_interval_s", 0), 30.0)
+    vec[tm + 1] = _squash(tstats.get("std_interval_s", 0), 30.0)
+    vec[tm + 2] = _squash(tstats.get("max_interval_s", 0), 120.0)
+
+    s = _V2_BANDS["struct"]
+    sf = features.get("structural_features", {})
+    vec[s + 0] = _squash(sf.get("sequence_length", 0), 20.0)
+    vec[s + 1] = _squash(sf.get("unique_action_types", 0), 10.0)
+    vec[s + 2] = float(sf.get("tool_call_ratio", 0))   # already in [0, 1]
+    vec[s + 3] = float(sf.get("error_retry_ratio", 0))  # already in [0, 1]
+
+    norm = np.linalg.norm(vec)
+    if norm > 0:
+        vec = vec / norm
+
+    return vec.tolist()
+
+
+# Base ensemble weights. Sum to 1.0; the single source of truth for both regimes.
+_METRIC_WEIGHTS = {"jsd": 0.25, "cosine": 0.30, "markov": 0.25, "stats": 0.20}
+_NEUTRAL_SCORE = 0.5  # legacy (V1) value injected for unmeasurable metrics
+
+
+def _base_weights() -> dict:
+    """Weights for the V2 aggregator: data-fit (RFC 0004) when enabled, else the
+    hand-set base. The legacy V1 aggregator always uses _METRIC_WEIGHTS."""
+    if settings.USE_LEARNED_WEIGHTS:
+        return LEARNED_METRIC_WEIGHTS
+    return _METRIC_WEIGHTS
+
+
 def compare_signatures(
     sig_a: dict,
     vec_a: list[float],
     sig_b: dict,
     vec_b: list[float],
 ) -> dict:
-    jsd = _jsd_score(sig_a, sig_b)
-    cos = _cosine_score(vec_a, vec_b)
-    markov = _markov_score(sig_a, sig_b)
-    stats = _stats_score(sig_a, sig_b)
+    # Raw metric values. jsd/cosine are always computable; markov/stats may
+    # abstain (return None) when the trajectory lacks the structure to measure.
+    raw = {
+        "jsd": _jsd_score(sig_a, sig_b),
+        "cosine": _cosine_score(vec_a, vec_b),
+        "markov": _markov_score(sig_a, sig_b),
+        "stats": _stats_score(sig_a, sig_b),
+    }
 
-    overall = 0.25 * jsd + 0.30 * cos + 0.25 * markov + 0.20 * stats
+    if settings.SCORE_NORMALIZATION_V2:
+        overall, breakdown = _aggregate_v2(raw)
+    else:
+        overall, breakdown = _aggregate_v1(raw)
 
     pass_threshold = settings.VERIFICATION_PASS_THRESHOLD
     fail_threshold = settings.VERIFICATION_FAIL_THRESHOLD
@@ -91,16 +216,66 @@ def compare_signatures(
     else:
         verdict = "warning"
 
-    return {
+    result = {
         "overall_score": round(overall, 4),
-        "breakdown": {
-            "jsd_score": round(jsd, 4),
-            "cosine_score": round(cos, 4),
-            "markov_score": round(markov, 4),
-            "stats_score": round(stats, 4),
-        },
+        "breakdown": breakdown,
         "verdict": verdict,
     }
+    if settings.SCORE_CALIBRATION:
+        result["confidence"] = round(calibrate_confidence(overall), 4)
+    return result
+
+
+def calibrate_confidence(raw_score: float) -> float:
+    """Platt scaling of the raw score into a probability (RFC 0006). Monotonic in
+    raw_score, so it never reorders results or changes the verdict."""
+    a = CALIBRATION_PARAMS["a"]
+    b = CALIBRATION_PARAMS["b"]
+    return 1.0 / (1.0 + math.exp(-(a * raw_score + b)))
+
+
+def _aggregate_v1(raw: dict) -> tuple[float, dict]:
+    """Legacy behavior: unmeasurable metrics vote a neutral 0.5; fixed weights."""
+    scores = {k: (_NEUTRAL_SCORE if v is None else v) for k, v in raw.items()}
+    overall = sum(_METRIC_WEIGHTS[k] * scores[k] for k in _METRIC_WEIGHTS)
+    breakdown = {
+        "jsd_score": round(scores["jsd"], 4),
+        "cosine_score": round(scores["cosine"], 4),
+        "markov_score": round(scores["markov"], 4),
+        "stats_score": round(scores["stats"], 4),
+    }
+    return overall, breakdown
+
+
+def _aggregate_v2(raw: dict) -> tuple[float, dict]:
+    """RFC 0001: abstaining metrics are excluded and their weight redistributed
+    proportionally over the metrics that produced a value. Base weights are the
+    hand-set defaults, or data-fit weights when USE_LEARNED_WEIGHTS (RFC 0004)."""
+    weights = _base_weights()
+    applicable = {k: v for k, v in raw.items() if v is not None}
+    total_w = sum(weights[k] for k in applicable)
+
+    if total_w > 0:
+        overall = sum(weights[k] * applicable[k] for k in applicable) / total_w
+        effective = {k: (weights[k] / total_w if k in applicable else 0.0)
+                     for k in weights}
+    else:
+        # No metric was measurable at all; nothing to assert similarity from.
+        overall = 0.0
+        effective = {k: 0.0 for k in _METRIC_WEIGHTS}
+
+    breakdown = {
+        "jsd_score": _round_or_none(raw["jsd"]),
+        "cosine_score": _round_or_none(raw["cosine"]),
+        "markov_score": _round_or_none(raw["markov"]),
+        "stats_score": _round_or_none(raw["stats"]),
+        "effective_weights": {k: round(w, 4) for k, w in effective.items()},
+    }
+    return overall, breakdown
+
+
+def _round_or_none(value: float | None) -> float | None:
+    return None if value is None else round(value, 4)
 
 
 def merge_features(existing: dict, new: dict, existing_weight: float = 0.7) -> dict:
@@ -280,15 +455,17 @@ def _cosine_score(vec_a: list[float], vec_b: list[float]) -> float:
     return 1.0 - dist
 
 
-def _markov_score(sig_a: dict, sig_b: dict) -> float:
+def _markov_score(sig_a: dict, sig_b: dict) -> float | None:
+    """Per-state JSD over transition matrices. Returns None (abstain) when there
+    is no transition structure to compare (e.g. trajectories with < 2 steps)."""
     model = sig_a.get("transition_matrix", {})
     observed = sig_b.get("transition_matrix", {})
     if not model or not observed:
-        return 0.5
+        return None
 
     all_src = set(model) | set(observed)
     if not all_src:
-        return 0.5
+        return None
 
     match_score = 0.0
     total_weight = 0.0
@@ -321,11 +498,13 @@ def _markov_score(sig_a: dict, sig_b: dict) -> float:
         total_weight += 1.0
 
     if total_weight == 0:
-        return 0.5
+        return None
     return match_score / total_weight
 
 
-def _stats_score(sig_a: dict, sig_b: dict) -> float:
+def _stats_score(sig_a: dict, sig_b: dict) -> float | None:
+    """Compares response-length and vocabulary profiles. Returns None (abstain)
+    when neither is computable (e.g. tool-only trajectories with no content)."""
     scores = []
     rls_a = sig_a.get("response_length_stats", {})
     rls_b = sig_b.get("response_length_stats", {})
@@ -341,7 +520,7 @@ def _stats_score(sig_a: dict, sig_b: dict) -> float:
         scores.append(1.0 - min(ttr_diff, 1.0))
 
     if not scores:
-        return 0.5
+        return None
     return sum(scores) / len(scores)
 
 

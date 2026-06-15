@@ -4,10 +4,15 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.agent_keys import create_agent_credentials
+from app.config import settings
 from app.models.agent import Agent
 from app.models.human import Human
 from app.schemas.agent import AgentRegisterRequest, AgentRefineRequest
 from app.services.signature_engine import extract_features, features_to_vector, merge_features
+
+
+def _current_vector_version() -> int:
+    return 2 if settings.VECTOR_ENCODING_V2 else 1
 
 
 async def register_agent(
@@ -25,6 +30,7 @@ async def register_agent(
         key_salt=key_salt,
         signature=signature,
         signature_vector=sig_vector,
+        signature_version=_current_vector_version(),
         status="active",
     )
     db.add(agent)
@@ -68,9 +74,27 @@ async def refine_agent(
     merged = merge_features(existing, new_features)
     agent.signature = merged
     agent.signature_vector = features_to_vector(merged)
+    agent.signature_version = _current_vector_version()
     await db.commit()
     await db.refresh(agent)
     return agent
+
+
+async def set_challenge_profile(
+    db: AsyncSession, agent_id: uuid.UUID, human_id: uuid.UUID, responses: dict
+) -> list[str] | None:
+    """Store per-probe response signatures (RFC 0008). Returns the profiled probe
+    ids, or None if the agent is not found / revoked."""
+    agent = await get_agent(db, agent_id, human_id)
+    if agent is None or agent.status == "revoked":
+        return None
+    profile = {
+        probe_id: extract_features(trajectory)
+        for probe_id, trajectory in responses.items()
+    }
+    agent.challenge_profile = profile
+    await db.commit()
+    return sorted(profile.keys())
 
 
 async def rotate_key(db: AsyncSession, agent_id: uuid.UUID, human_id: uuid.UUID) -> str | None:

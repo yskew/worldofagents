@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Boolean, DateTime, Float, ForeignKey, String, func
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, SmallInteger, String, func
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -23,6 +23,9 @@ class VerificationLog(Base):
     )
     similarity_score: Mapped[float] = mapped_column(Float, nullable=False)
     passed: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    # Scoring regime that produced similarity_score (RFC 0001). NULL = pre-RFC
+    # rows, 1 = legacy weighting, 2 = confidence-aware normalization.
+    score_version: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
     ip_address: Mapped[str | None] = mapped_column(String(45), nullable=True)
     requested_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
