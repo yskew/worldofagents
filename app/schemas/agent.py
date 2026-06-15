@@ -15,6 +15,14 @@ class TrajectoryStep(BaseModel):
     metadata: dict | None = None
 
 
+class AgentScopesRequest(BaseModel):
+    scopes: list[str] = Field(default_factory=list)
+
+
+class AgentScopesResponse(BaseModel):
+    allowed_scopes: list[str]
+
+
 class AgentRegisterRequest(BaseModel):
     name: str = Field(..., min_length=1, max_length=255)
     description: str | None = Field(None, max_length=2000)

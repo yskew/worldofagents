@@ -97,6 +97,19 @@ async def set_challenge_profile(
     return sorted(profile.keys())
 
 
+async def set_allowed_scopes(
+    db: AsyncSession, agent_id: uuid.UUID, human_id: uuid.UUID, scopes: list[str]
+) -> list[str] | None:
+    """Set the scopes this agent may request via the token-exchange broker (RFC
+    0009). Returns the stored scopes, or None if not found / revoked."""
+    agent = await get_agent(db, agent_id, human_id)
+    if agent is None or agent.status == "revoked":
+        return None
+    agent.allowed_scopes = sorted(set(scopes))
+    await db.commit()
+    return agent.allowed_scopes
+
+
 async def rotate_key(db: AsyncSession, agent_id: uuid.UUID, human_id: uuid.UUID) -> str | None:
     agent = await get_agent(db, agent_id, human_id)
     if agent is None or agent.status == "revoked":

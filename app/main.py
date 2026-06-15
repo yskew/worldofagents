@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import agents, health, verify, wellknown
+from app.api import agents, health, oauth, verify, wellknown
 from app.config import settings
 
 
@@ -26,6 +26,7 @@ def create_app() -> FastAPI:
     application.include_router(health.router)
     application.include_router(agents.router)
     application.include_router(verify.router)
+    application.include_router(oauth.router)
     application.include_router(wellknown.router)
     return application
 

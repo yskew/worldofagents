@@ -35,6 +35,9 @@ class Agent(Base):
     # RFC 0008: per-probe response signatures captured at registration, used by
     # active challenge-response verification. {probe_id: signature_dict}.
     challenge_profile: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    # RFC 0009: scopes this agent may request via the token-exchange broker.
+    # NULL/[] = the agent may request no downstream scopes.
+    allowed_scopes: Mapped[list | None] = mapped_column(JSONB, nullable=True)
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="active")
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
