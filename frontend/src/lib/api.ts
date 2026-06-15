@@ -94,6 +94,25 @@ export interface TrajectoryStep {
   metadata?: Record<string, unknown>;
 }
 
+export type TelemetrySource = 'otel' | 'langfuse' | 'braintrust';
+
+export interface TelemetrySummary {
+  tool_histogram: Record<string, number>;
+  unique_tools: number;
+  sequence_length: number;
+  tool_call_ratio: number;
+  error_rate: number;
+  mean_interval_s: number | null;
+}
+
+export interface TelemetryIngestResponse {
+  source: string;
+  ingested_spans: number;
+  mapped_steps: number;
+  summary: TelemetrySummary;
+  applied: boolean;
+}
+
 export const api = {
   // open endpoints — no auth
   health: () => request<{ status: string }>('/health'),
@@ -103,6 +122,10 @@ export const api = {
     request<CompareResponse>('/compare', { method: 'POST', body: JSON.stringify({ trajectory_a, trajectory_b }) }),
   publicProfile: (id: string) => request<PublicProfile>(`/agents/${id}/public`),
   jwks: () => request<{ keys: unknown[] }>('/.well-known/jwks.json'),
+  // telemetry ingestion is agent-key authenticated (key in body), no Clerk token
+  ingestTelemetry: (data: {
+    agent_id: string; agent_key: string; source: TelemetrySource; spans: unknown[]; apply?: boolean;
+  }) => request<TelemetryIngestResponse>('/telemetry/ingest', { method: 'POST', body: JSON.stringify(data) }),
 
   // authenticated endpoints — send Clerk token
   listAgents: () => request<{ agents: Agent[] }>('/agents', undefined, true),

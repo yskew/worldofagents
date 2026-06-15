@@ -97,6 +97,20 @@ async def set_challenge_profile(
     return sorted(profile.keys())
 
 
+async def enrich_signature_from_trajectory(
+    db: AsyncSession, agent: Agent, trajectory: list
+) -> None:
+    """Merge a telemetry-derived trajectory into the agent's stored signature
+    (RFC 0010). Same exponential-weighted merge as /refine, but operates on an
+    already-loaded, agent-key-authenticated agent (no human-session check)."""
+    new_features = extract_features(trajectory)
+    merged = merge_features(agent.signature or {}, new_features)
+    agent.signature = merged
+    agent.signature_vector = features_to_vector(merged)
+    agent.signature_version = _current_vector_version()
+    await db.commit()
+
+
 async def set_allowed_scopes(
     db: AsyncSession, agent_id: uuid.UUID, human_id: uuid.UUID, scopes: list[str]
 ) -> list[str] | None:

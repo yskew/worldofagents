@@ -16,6 +16,10 @@ class Settings(BaseSettings):
     JWT_ISSUER: str = "agentverify"
     JWT_EXPIRY_SECONDS: int = 3600
 
+    # Telemetry ingestion (RFC 0010). Accept agent traces (OTel/Langfuse/Braintrust)
+    # and enrich signatures from real runtime behavior. Disable to 503 the endpoint.
+    TELEMETRY_ENABLED: bool = True
+
     # Token-exchange broker (RFC 0009). Downstream delegated tokens are short-lived.
     # OIDC_PROVIDERS_JSON is an optional JSON array of external IdPs to federate
     # ALONGSIDE Clerk (which is always available and unchanged), e.g.
